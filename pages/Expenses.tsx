@@ -4,29 +4,44 @@ import { backend } from '../services/mockBackend';
 import { Card, Button, Input, Select } from '../components/UI';
 import { EXPENSE_CATEGORIES, playSound } from '../constants';
 import { Expense } from '../types';
-import { Trash2, TrendingDown } from 'lucide-react';
+import { Trash2, TrendingDown, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 const Expenses: React.FC = () => {
   const { user, data, refreshData } = useApp();
-  const [newExpense, setNewExpense] = useState<Partial<Expense>>({
+  const [formExpense, setFormExpense] = useState<Partial<Expense>>({
     amount: 0, category: 'Food', description: '', date: format(new Date(), 'yyyy-MM-dd')
   });
   const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM'));
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     try {
-      await backend.addItem(user.id, 'expenses', {
-        ...newExpense,
-        id: crypto.randomUUID(),
-        userId: user.id
-      } as Expense);
+      if (editingId) {
+          const existing = data.expenses.find(e => e.id === editingId);
+          if (existing) {
+              await backend.updateItem(user.id, 'expenses', { ...existing, ...formExpense } as Expense);
+          }
+          setEditingId(null);
+      } else {
+          await backend.addItem(user.id, 'expenses', {
+            ...formExpense,
+            id: crypto.randomUUID(),
+            userId: user.id
+          } as Expense);
+      }
+      
       playSound('success');
       await refreshData();
-      setNewExpense({ ...newExpense, amount: 0, description: '' });
+      setFormExpense({ amount: 0, category: 'Food', description: '', date: format(new Date(), 'yyyy-MM-dd') });
     } catch (e) { console.error(e); }
+  };
+
+  const handleEdit = (expense: Expense) => {
+      setFormExpense(expense);
+      setEditingId(expense.id);
   };
 
   const handleDelete = async (id: string) => {
@@ -45,34 +60,35 @@ const Expenses: React.FC = () => {
         {/* Add Form */}
         <Card className="flex-1 h-fit">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-             <TrendingDown className="text-red-400" /> Add Expense
+             <TrendingDown className="text-red-400" /> {editingId ? "Update Expense" : "Add Expense"}
           </h2>
-          <form onSubmit={handleAdd} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <Input 
               type="number" placeholder="Amount (₹)" 
-              value={newExpense.amount || ''} 
-              onChange={e => setNewExpense({...newExpense, amount: Number(e.target.value)})} 
+              value={formExpense.amount || ''} 
+              onChange={e => setFormExpense({...formExpense, amount: Number(e.target.value)})} 
               required 
             />
             <Select 
-              value={newExpense.category} 
-              onChange={e => setNewExpense({...newExpense, category: e.target.value})}
+              value={formExpense.category} 
+              onChange={e => setFormExpense({...formExpense, category: e.target.value})}
             >
               {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
             <Input 
               placeholder="Where? (Description)" 
-              value={newExpense.description} 
-              onChange={e => setNewExpense({...newExpense, description: e.target.value})} 
+              value={formExpense.description} 
+              onChange={e => setFormExpense({...formExpense, description: e.target.value})} 
               required 
             />
             <Input 
               type="date" 
-              value={newExpense.date} 
-              onChange={e => setNewExpense({...newExpense, date: e.target.value})} 
+              value={formExpense.date} 
+              onChange={e => setFormExpense({...formExpense, date: e.target.value})} 
               required 
             />
-            <Button type="submit" className="w-full">Add Expense</Button>
+            <Button type="submit" className="w-full">{editingId ? "Update" : "Add Expense"}</Button>
+            {editingId && <Button type="button" variant="ghost" className="w-full" onClick={() => {setEditingId(null); setFormExpense({ amount: 0, category: 'Food', description: '', date: format(new Date(), 'yyyy-MM-dd') });}}>Cancel</Button>}
           </form>
         </Card>
 
@@ -108,9 +124,14 @@ const Expenses: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-4">
                         <span className="font-bold text-red-300">-₹{e.amount}</span>
-                        <button onClick={() => handleDelete(e.id)} className="text-gray-500 hover:text-red-400 transition-colors">
-                            <Trash2 size={18} />
-                        </button>
+                        <div className="flex gap-1">
+                             <button onClick={() => handleEdit(e)} className="text-gray-500 hover:text-white transition-colors p-1">
+                                <Edit2 size={16} />
+                            </button>
+                            <button onClick={() => handleDelete(e.id)} className="text-gray-500 hover:text-red-400 transition-colors p-1">
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
                     </div>
                  </div>
              ))}

@@ -5,7 +5,7 @@ import { backend } from './services/mockBackend';
 import { Layout } from './components/Layout';
 import { getMotivationalQuote } from './services/geminiService';
 
-// Pages (defined later in this file for single-file constraints or imported)
+// Pages
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
@@ -26,6 +26,7 @@ interface AppContextType {
   isLoading: boolean;
   refreshData: () => Promise<void>;
   loginUser: (u: User) => void;
+  updateUser: (u: User) => void;
   logoutUser: () => void;
   dailyQuote: string;
 }
@@ -83,7 +84,7 @@ const App = () => {
   };
 
   useEffect(() => {
-    // Check session - in a real app check cookie/token
+    // Check session
     const storedUser = localStorage.getItem('glasshabit_user');
     if (storedUser) {
         const parsedUser = JSON.parse(storedUser);
@@ -106,13 +107,18 @@ const App = () => {
     });
   };
 
+  const updateUser = (u: User) => {
+      setUser(u);
+      localStorage.setItem('glasshabit_user', JSON.stringify(u));
+  }
+
   const logoutUser = () => {
     setUser(null);
     localStorage.removeItem('glasshabit_user');
   };
 
   return (
-    <AppContext.Provider value={{ user, data, isLoading, refreshData, loginUser, logoutUser, dailyQuote }}>
+    <AppContext.Provider value={{ user, data, isLoading, refreshData, loginUser, updateUser, logoutUser, dailyQuote }}>
       <HashRouter>
          <AppContent />
       </HashRouter>

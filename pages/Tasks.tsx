@@ -2,44 +2,74 @@ import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
 import { Card, Button, Input, Modal, Select, Badge, SparkleEffect } from '../components/UI';
-import { Plus, Check, Target, Zap } from 'lucide-react';
+import { Plus, Check, Target, Zap, Edit2 } from 'lucide-react';
 import { Task, TaskType, TaskLog } from '../types';
 import { format, isFuture, isToday, subDays, parseISO } from 'date-fns';
 import { playSound } from '../constants';
 
 const Tasks: React.FC = () => {
   const { user, data, refreshData } = useApp();
-  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isModalOpen, setModalOpen] = useState(false); // Used for both Create and Edit
   const [isMarkModalOpen, setMarkModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showSparkle, setShowSparkle] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
-  const [newTask, setNewTask] = useState<Partial<Task>>({
+  const [taskForm, setTaskForm] = useState<Partial<Task>>({
     name: '', reason: '', type: TaskType.PERSONAL, category: 'habit', penalty: '', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: ''
   });
 
-  const [markData, setMarkData] = useState({ remark: '', image: '' });
+  const [markData, setMarkData] = useState({ remark: '', images: [] as string[] });
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const resetForm = () => {
+      setTaskForm({
+        name: '', reason: '', type: TaskType.PERSONAL, category: 'habit', penalty: '', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: ''
+      });
+      setIsEditing(false);
+      setSelectedTask(null);
+  };
+
+  const handleOpenCreate = () => {
+      resetForm();
+      setModalOpen(true);
+  };
+
+  const handleOpenEdit = (task: Task) => {
+      setTaskForm(task);
+      setSelectedTask(task);
+      setIsEditing(true);
+      setModalOpen(true);
+  };
+
+  const handleSubmitTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     try {
-        await backend.addItem(user.id, 'tasks', {
-            ...newTask,
-            id: crypto.randomUUID(),
-            userId: user.id,
-            createdAt: new Date().toISOString()
-        } as Task);
+        if (isEditing && selectedTask) {
+            await backend.updateItem(user.id, 'tasks', {
+                ...selectedTask,
+                ...taskForm
+            } as Task);
+            playSound('success');
+        } else {
+            await backend.addItem(user.id, 'tasks', {
+                ...taskForm,
+                id: crypto.randomUUID(),
+                userId: user.id,
+                createdAt: new Date().toISOString()
+            } as Task);
+            playSound('success');
+        }
         await refreshData();
-        setCreateModalOpen(false);
-        playSound('success');
+        setModalOpen(false);
+        resetForm();
     } catch (e) { console.error(e); }
   };
 
   const handleMarkClick = (task: Task) => {
       setSelectedTask(task);
       setMarkModalOpen(true);
-      setMarkData({ remark: '', image: '' });
+      setMarkData({ remark: '', images: [] });
   };
 
   const handleMarkSubmit = async (e: React.FormEvent) => {
@@ -56,7 +86,7 @@ const Tasks: React.FC = () => {
               taskId: selectedTask.id,
               date: logDate,
               remark: markData.remark,
-              image: markData.image,
+              images: markData.images, // Use array
               completed: true,
               timestamp: Date.now()
           } as TaskLog);
@@ -70,17 +100,20 @@ const Tasks: React.FC = () => {
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              setMarkData({ ...markData, image: reader.result as string });
-          };
-          reader.readAsDataURL(file);
+      const files = e.target.files;
+      if (files) {
+          Array.from(files).forEach(file => {
+             const reader = new FileReader();
+             reader.onloadend = () => {
+                 if (reader.result) {
+                     setMarkData(prev => ({ ...prev, images: [...prev.images, reader.result as string] }));
+                 }
+             };
+             reader.readAsDataURL(file as Blob);
+          });
       }
   };
 
-  // Helper to check if task is done today
   const isDoneToday = (taskId: string) => {
       const today = format(new Date(), 'yyyy-MM-dd');
       return data.logs.some(l => l.taskId === taskId && l.date === today && l.completed);
@@ -91,28 +124,33 @@ const Tasks: React.FC = () => {
       <SparkleEffect active={showSparkle} />
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-white">Tasks & Habits</h2>
-        <Button onClick={() => setCreateModalOpen(true)}>
+        <Button onClick={handleOpenCreate}>
           <Plus size={18} /> New Task
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {data.tasks.map(task => (
-            <Card key={task.id} className="relative group hover:border-indigo-500/50 transition-all">
+            <Card key={task.id} className="relative group hover:border-indigo-500/50 transition-all flex flex-col h-full">
                 <div className="flex justify-between items-start mb-2">
-                    <Badge color={task.category === 'habit' ? 'bg-green-500/20 text-green-200' : 'bg-blue-500/20 text-blue-200'}>
-                        {task.category.toUpperCase()}
-                    </Badge>
-                    <Badge>{task.type}</Badge>
+                    <div className="flex gap-2">
+                        <Badge color={task.category === 'habit' ? 'bg-green-500/20 text-green-200' : 'bg-blue-500/20 text-blue-200'}>
+                            {task.category.toUpperCase()}
+                        </Badge>
+                        <Badge>{task.type}</Badge>
+                    </div>
+                    <button onClick={() => handleOpenEdit(task)} className="text-gray-400 hover:text-white">
+                        <Edit2 size={16} />
+                    </button>
                 </div>
                 <h3 className="text-xl font-bold mb-1">{task.name}</h3>
-                <p className="text-sm text-gray-400 mb-4">{task.reason}</p>
+                <p className="text-sm text-gray-400 mb-4 flex-1">{task.reason}</p>
                 
                 <div className="text-xs text-red-300 bg-red-500/10 p-2 rounded-lg mb-4">
                     Penalty: {task.penalty || 'None'}
                 </div>
 
-                <div className="mt-auto pt-4 border-t border-white/10 flex justify-between items-center">
+                <div className="pt-4 border-t border-white/10 flex justify-between items-center mt-auto">
                     <div className="text-xs text-gray-500">Since: {format(parseISO(task.createdAt), 'MMM d')}</div>
                     {isDoneToday(task.id) ? (
                          <span className="text-green-400 flex items-center gap-1 text-sm font-bold">
@@ -131,26 +169,26 @@ const Tasks: React.FC = () => {
         ))}
       </div>
 
-      {/* Create Modal */}
-      <Modal isOpen={isCreateModalOpen} onClose={() => setCreateModalOpen(false)} title="Create New Task">
-          <form onSubmit={handleCreate} className="space-y-4">
-              <Input placeholder="Task Name" value={newTask.name} onChange={e => setNewTask({...newTask, name: e.target.value})} required />
-              <Input placeholder="Why do you want this?" value={newTask.reason} onChange={e => setNewTask({...newTask, reason: e.target.value})} required />
+      {/* Task Modal (Create/Edit) */}
+      <Modal isOpen={isModalOpen} onClose={() => setModalOpen(false)} title={isEditing ? "Edit Task" : "Create New Task"}>
+          <form onSubmit={handleSubmitTask} className="space-y-4">
+              <Input placeholder="Task Name" value={taskForm.name} onChange={e => setTaskForm({...taskForm, name: e.target.value})} required />
+              <Input placeholder="Why do you want this?" value={taskForm.reason} onChange={e => setTaskForm({...taskForm, reason: e.target.value})} required />
               <div className="grid grid-cols-2 gap-4">
-                <Select value={newTask.category} onChange={e => setNewTask({...newTask, category: e.target.value as any})}>
+                <Select value={taskForm.category} onChange={e => setTaskForm({...taskForm, category: e.target.value as any})}>
                     <option value="habit">Habit</option>
                     <option value="goal">Goal</option>
                 </Select>
-                <Select value={newTask.type} onChange={e => setNewTask({...newTask, type: e.target.value as any})}>
+                <Select value={taskForm.type} onChange={e => setTaskForm({...taskForm, type: e.target.value as any})}>
                     {Object.values(TaskType).map(t => <option key={t} value={t}>{t}</option>)}
                 </Select>
               </div>
-              <Input placeholder="Penalty if missed" value={newTask.penalty} onChange={e => setNewTask({...newTask, penalty: e.target.value})} />
+              <Input placeholder="Penalty if missed" value={taskForm.penalty} onChange={e => setTaskForm({...taskForm, penalty: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <Input type="date" value={newTask.startDate} onChange={e => setNewTask({...newTask, startDate: e.target.value})} required />
-                <Input type="date" value={newTask.endDate} onChange={e => setNewTask({...newTask, endDate: e.target.value})} />
+                <Input type="date" value={taskForm.startDate} onChange={e => setTaskForm({...taskForm, startDate: e.target.value})} required />
+                <Input type="date" value={taskForm.endDate} onChange={e => setTaskForm({...taskForm, endDate: e.target.value})} />
               </div>
-              <Button type="submit" className="w-full">Create</Button>
+              <Button type="submit" className="w-full">{isEditing ? "Update Task" : "Create Task"}</Button>
           </form>
       </Modal>
 
@@ -165,11 +203,15 @@ const Tasks: React.FC = () => {
                  required
               />
               <div>
-                  <label className="block text-sm text-gray-400 mb-2">Proof Image (Optional)</label>
-                  <Input type="file" accept="image/*" onChange={handleImageUpload} />
+                  <label className="block text-sm text-gray-400 mb-2">Proof Images (Optional, Select Multiple)</label>
+                  <Input type="file" accept="image/*" multiple onChange={handleImageUpload} />
               </div>
-              {markData.image && (
-                  <img src={markData.image} alt="Preview" className="w-full h-32 object-cover rounded-xl" />
+              {markData.images.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                      {markData.images.map((img, idx) => (
+                           <img key={idx} src={img} alt="Preview" className="w-full h-20 object-cover rounded-lg" />
+                      ))}
+                  </div>
               )}
               <Button type="submit" className="w-full">Confirm Completion</Button>
           </form>

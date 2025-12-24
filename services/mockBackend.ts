@@ -47,6 +47,16 @@ class MockBackendService {
     // Password check logic would be here
     return simulateNetwork(user);
   }
+  
+  async updateUser(updatedUser: User): Promise<User> {
+      const db = this.getStorage();
+      const index = db.users.findIndex(u => u.id === updatedUser.id);
+      if (index === -1) throw new Error("User not found");
+      
+      db.users[index] = updatedUser;
+      this.saveStorage(db);
+      return simulateNetwork(updatedUser);
+  }
 
   async resetData(userId: string, secretKeyAnswer: string): Promise<boolean> {
     const db = this.getStorage();

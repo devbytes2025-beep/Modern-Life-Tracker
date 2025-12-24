@@ -26,7 +26,7 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { 
 
 export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
   <input 
-    className="w-full glass-input px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder-gray-400"
+    className="w-full glass-input px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
     {...props}
   />
 );
@@ -63,11 +63,31 @@ export const SparkleEffect: React.FC<{ active: boolean }> = ({ active }) => {
   if (!active) return null;
   return (
     <div className="fixed inset-0 pointer-events-none z-[60] flex items-center justify-center">
-       {/* Simplified CSS sparkle logic would go here, utilizing the animation defined in index.html */}
-       <div className="animate-sparkle text-6xl">✨</div>
+       <div className="animate-sparkle text-6xl text-yellow-300">✨</div>
+       <div className="animate-sparkle text-6xl text-pink-300 absolute -top-10 -left-10" style={{animationDelay: '0.1s'}}>✨</div>
+       <div className="animate-sparkle text-6xl text-blue-300 absolute -bottom-10 -right-10" style={{animationDelay: '0.2s'}}>✨</div>
     </div>
   );
 };
+
+export const FireworksEffect: React.FC<{ active: boolean }> = ({ active }) => {
+    if (!active) return null;
+    return (
+        <div className="fixed inset-0 pointer-events-none z-[70] overflow-hidden">
+             {/* Simulating fireworks with CSS particles for simplicity in this env */}
+             <div className="absolute top-1/2 left-1/2 w-4 h-4 bg-red-500 rounded-full animate-[ping_1s_ease-out_infinite]"></div>
+             <div className="absolute top-1/3 left-1/3 w-4 h-4 bg-blue-500 rounded-full animate-[ping_1.2s_ease-out_infinite]"></div>
+             <div className="absolute top-1/3 left-2/3 w-4 h-4 bg-green-500 rounded-full animate-[ping_0.8s_ease-out_infinite]"></div>
+             <div className="absolute top-2/3 left-1/2 w-4 h-4 bg-yellow-500 rounded-full animate-[ping_1.5s_ease-out_infinite]"></div>
+             
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+                 <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-pink-600 animate-pulse">
+                     Amazing Job! 🎆
+                 </h1>
+             </div>
+        </div>
+    );
+}
 
 export const Badge: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = "bg-indigo-500/20 text-indigo-200" }) => (
   <span className={`px-2 py-1 rounded-md text-xs font-medium border border-white/5 ${color}`}>

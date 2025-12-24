@@ -8,6 +8,7 @@ export interface User {
   gender?: string;
   secretKeyAnswer: string; // Encrypted in real app
   theme: 'light' | 'dark';
+  name?: string; // Full Name
 }
 
 export enum TaskType {
@@ -36,7 +37,7 @@ export interface TaskLog {
   taskId: string;
   date: string; // ISO date YYYY-MM-DD
   remark: string;
-  image?: string; // Base64
+  images?: string[]; // Base64 array
   completed: boolean;
   timestamp: number;
 }
@@ -63,7 +64,7 @@ export interface JournalEntry {
   userId: string;
   content: string;
   mood: string; // Emoji char
-  image?: string;
+  images?: string[];
   date: string;
   timestamp: number;
 }
