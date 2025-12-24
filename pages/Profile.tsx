@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { Card, Button, Input, Select } from '../components/UI';
-import { User as UserIcon, Camera, Save } from 'lucide-react';
+import { User as UserIcon, Camera, Save, Trophy } from 'lucide-react';
 import { backend } from '../services/mockBackend';
 import { playSound } from '../constants';
 import { User } from '../types';
@@ -71,7 +71,11 @@ const Profile: React.FC = () => {
         {!isEditing ? (
              <>
                 <h2 className="text-3xl font-bold">{user.name || user.username}</h2>
-                <p className="text-gray-400">@{user.username}</p>
+                <div className="flex items-center justify-center gap-2 mt-2 text-yellow-400 font-bold">
+                    <Trophy size={16} />
+                    <span>{user.points || 0} Points</span>
+                </div>
+                <p className="text-gray-400 mt-1">@{user.username}</p>
                 <p className="text-sm text-gray-500 mt-1">{user.email}</p>
                 <Button variant="ghost" className="mt-4" onClick={() => setIsEditing(true)}>Edit Profile</Button>
              </>

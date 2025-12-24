@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
-import { Card, Button, Input, FireworksEffect } from '../components/UI';
+import { Card, Button, Input, FireworksEffect, SparkleEffect } from '../components/UI';
 import { JournalEntry } from '../types';
 import { format } from 'date-fns';
-import { Search, Edit2 } from 'lucide-react';
+import { Search, Edit2, Trash2 } from 'lucide-react';
 import { playSound } from '../constants';
 
 const MOODS = ['😊', '😐', '😔', '😡', '🥳', '😴'];
@@ -18,6 +18,7 @@ const Journal: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFireworks, setShowFireworks] = useState(false);
+  const [showSparkle, setShowSparkle] = useState(false);
 
   const handleSave = async () => {
     if (!user || !content) return;
@@ -44,11 +45,15 @@ const Journal: React.FC = () => {
               timestamp: Date.now()
             } as JournalEntry);
             
+            // Animations for new entry
             setShowFireworks(true);
-            setTimeout(() => setShowFireworks(false), 3000);
+            setTimeout(() => setShowFireworks(false), 2000);
         }
 
         playSound('success');
+        setShowSparkle(true);
+        setTimeout(() => setShowSparkle(false), 1500);
+
         setContent('');
         setImages([]);
         refreshData();
@@ -60,6 +65,16 @@ const Journal: React.FC = () => {
       setMood(entry.mood);
       setImages(entry.images || []);
       setEditingId(entry.id);
+  };
+
+  const handleDelete = async (id: string) => {
+      if (!user) return;
+      if (!window.confirm("Are you sure you want to delete this memory?")) return;
+      try {
+          await backend.deleteItem(user.id, 'journal', id);
+          playSound('click');
+          refreshData();
+      } catch (e) { console.error(e); }
   };
 
    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,6 +101,7 @@ const Journal: React.FC = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative">
       <FireworksEffect active={showFireworks} />
+      <SparkleEffect active={showSparkle} />
       
       {/* Editor */}
       <div className="lg:col-span-1 space-y-6">
@@ -150,24 +166,35 @@ const Journal: React.FC = () => {
 
         <div className="grid gap-4">
            {filteredEntries.map(entry => (
-               <Card key={entry.id} className="relative group">
-                   <button 
-                        onClick={() => handleEdit(entry)} 
-                        className="absolute top-4 right-4 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
-                   >
-                       <Edit2 size={18} />
-                   </button>
+               <Card key={entry.id} className="relative group hover:border-white/20 transition-all">
+                   <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button 
+                            onClick={() => handleEdit(entry)} 
+                            className="text-gray-400 hover:text-white p-1"
+                            title="Edit"
+                       >
+                           <Edit2 size={18} />
+                       </button>
+                       <button 
+                            onClick={() => handleDelete(entry.id)} 
+                            className="text-gray-400 hover:text-red-400 p-1"
+                            title="Delete"
+                       >
+                           <Trash2 size={18} />
+                       </button>
+                   </div>
+                   
                    <div className="flex gap-4">
                        <div className="text-4xl">{entry.mood}</div>
                        <div className="flex-1">
-                           <div className="flex justify-between items-start mr-8">
+                           <div className="flex justify-between items-start mr-16">
                                <p className="text-gray-300 whitespace-pre-wrap">{entry.content}</p>
-                               <span className="text-xs text-gray-500">{entry.date}</span>
+                               <span className="text-xs text-gray-500 min-w-[80px] text-right">{entry.date}</span>
                            </div>
                            {entry.images && entry.images.length > 0 && (
-                               <div className="flex gap-2 mt-3 overflow-x-auto">
+                               <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-thin">
                                    {entry.images.map((img, i) => (
-                                       <img key={i} src={img} alt="Memory" className="rounded-lg h-32 w-auto object-cover" />
+                                       <img key={i} src={img} alt="Memory" className="rounded-lg h-32 w-auto object-cover border border-white/5" />
                                    ))}
                                </div>
                            )}
@@ -175,6 +202,7 @@ const Journal: React.FC = () => {
                    </div>
                </Card>
            ))}
+           {filteredEntries.length === 0 && <p className="text-gray-500 text-center py-8">No journal entries found.</p>}
         </div>
       </div>
     </div>

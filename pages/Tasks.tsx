@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
-import { Card, Button, Input, Modal, Select, Badge, SparkleEffect } from '../components/UI';
+import { Card, Button, Input, Modal, Select, Badge, SparkleEffect, FireworksEffect } from '../components/UI';
 import { Plus, Check, Target, Zap, Edit2 } from 'lucide-react';
 import { Task, TaskType, TaskLog } from '../types';
 import { format, isFuture, isToday, subDays, parseISO } from 'date-fns';
 import { playSound } from '../constants';
 
 const Tasks: React.FC = () => {
-  const { user, data, refreshData } = useApp();
+  const { user, data, refreshData, updateUser } = useApp();
   const [isModalOpen, setModalOpen] = useState(false); // Used for both Create and Edit
   const [isMarkModalOpen, setMarkModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showSparkle, setShowSparkle] = useState(false);
+  const [showFireworks, setShowFireworks] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   const [taskForm, setTaskForm] = useState<Partial<Task>>({
@@ -77,7 +78,6 @@ const Tasks: React.FC = () => {
       if (!user || !selectedTask) return;
       
       try {
-          // Check date restrictions
           const today = new Date();
           const logDate = format(today, 'yyyy-MM-dd');
           
@@ -86,16 +86,30 @@ const Tasks: React.FC = () => {
               taskId: selectedTask.id,
               date: logDate,
               remark: markData.remark,
-              images: markData.images, // Use array
+              images: markData.images, 
               completed: true,
               timestamp: Date.now()
           } as TaskLog);
 
+          // Update Points
+          const pointsEarned = 10;
+          const updatedUser = { ...user, points: (user.points || 0) + pointsEarned };
+          await backend.updateUser(updatedUser);
+          updateUser(updatedUser);
+
           await refreshData();
           setMarkModalOpen(false);
           playSound('success');
+          
+          // Randomly choose effect for variety, or use both
           setShowSparkle(true);
-          setTimeout(() => setShowSparkle(false), 1500);
+          setTimeout(() => setShowSparkle(false), 2000);
+          
+          if (pointsEarned >= 10) {
+              setShowFireworks(true);
+              setTimeout(() => setShowFireworks(false), 3000);
+          }
+
       } catch (e) { console.error(e); }
   };
 
@@ -122,6 +136,8 @@ const Tasks: React.FC = () => {
   return (
     <div className="space-y-6">
       <SparkleEffect active={showSparkle} />
+      <FireworksEffect active={showFireworks} />
+      
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-white">Tasks & Habits</h2>
         <Button onClick={handleOpenCreate}>
@@ -161,7 +177,7 @@ const Tasks: React.FC = () => {
                             className="py-1 px-3 text-sm" 
                             onClick={() => handleMarkClick(task)}
                         >
-                            Mark Done
+                            Mark Done (+10xp)
                         </Button>
                     )}
                 </div>
@@ -213,7 +229,7 @@ const Tasks: React.FC = () => {
                       ))}
                   </div>
               )}
-              <Button type="submit" className="w-full">Confirm Completion</Button>
+              <Button type="submit" className="w-full">Confirm Completion (+10 Points)</Button>
           </form>
       </Modal>
     </div>

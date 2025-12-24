@@ -9,6 +9,7 @@ export interface User {
   secretKeyAnswer: string; // Encrypted in real app
   theme: 'light' | 'dark';
   name?: string; // Full Name
+  points: number;
 }
 
 export enum TaskType {

@@ -26,12 +26,12 @@ class MockBackendService {
 
   // --- Auth ---
 
-  async register(user: Omit<User, 'id' | 'theme'>): Promise<User> {
+  async register(user: Omit<User, 'id' | 'theme' | 'points'>): Promise<User> {
     const db = this.getStorage();
     if (db.users.find(u => u.username === user.username)) {
       throw new Error("Username already exists");
     }
-    const newUser: User = { ...user, id: crypto.randomUUID(), theme: 'dark' };
+    const newUser: User = { ...user, id: crypto.randomUUID(), theme: 'dark', points: 0 };
     db.users.push(newUser);
     db.data[newUser.id] = { tasks: [], logs: [], todos: [], expenses: [], journal: [] };
     this.saveStorage(db);
