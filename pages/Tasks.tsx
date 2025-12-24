@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
-import { Card, Button, Input, Modal, Select, Badge, SparkleEffect, FireworksEffect } from '../components/UI';
+import { Card, Button, Input, Modal, Select, Badge, SparkleEffect, FireworksEffect, BoomEffect } from '../components/UI';
 import { Plus, Check, Target, Zap, Edit2 } from 'lucide-react';
 import { Task, TaskType, TaskLog } from '../types';
 import { format, isFuture, isToday, subDays, parseISO } from 'date-fns';
@@ -14,6 +14,7 @@ const Tasks: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showSparkle, setShowSparkle] = useState(false);
   const [showFireworks, setShowFireworks] = useState(false);
+  const [showBoom, setShowBoom] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   const [taskForm, setTaskForm] = useState<Partial<Task>>({
@@ -101,13 +102,14 @@ const Tasks: React.FC = () => {
           setMarkModalOpen(false);
           playSound('success');
           
-          // Randomly choose effect for variety, or use both
-          setShowSparkle(true);
-          setTimeout(() => setShowSparkle(false), 2000);
-          
-          if (pointsEarned >= 10) {
-              setShowFireworks(true);
-              setTimeout(() => setShowFireworks(false), 3000);
+          // Trigger Random Animations for Variety
+          const rand = Math.random();
+          if (rand > 0.6) {
+             setShowBoom(true);
+             setTimeout(() => setShowBoom(false), 2000);
+          } else {
+             setShowSparkle(true);
+             setTimeout(() => setShowSparkle(false), 2000);
           }
 
       } catch (e) { console.error(e); }
@@ -137,6 +139,7 @@ const Tasks: React.FC = () => {
     <div className="space-y-6">
       <SparkleEffect active={showSparkle} />
       <FireworksEffect active={showFireworks} />
+      <BoomEffect active={showBoom} />
       
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-white">Tasks & Habits</h2>

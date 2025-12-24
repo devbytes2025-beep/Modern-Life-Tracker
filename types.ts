@@ -6,6 +6,7 @@ export interface User {
   bio?: string;
   dob?: string;
   gender?: string;
+  securityQuestion?: string; 
   secretKeyAnswer: string; // Encrypted in real app
   theme: 'light' | 'dark';
   name?: string; // Full Name

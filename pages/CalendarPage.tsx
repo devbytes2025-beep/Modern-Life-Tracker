@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { Card, Button, Modal } from '../components/UI';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isFuture, isToday, subDays, addMonths, subMonths, getDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isFuture, isToday, subDays, addMonths, subMonths, getDay, isAfter, isBefore, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { playSound } from '../constants';
 
@@ -15,22 +15,39 @@ const CalendarPage: React.FC = () => {
     end: endOfMonth(currentMonth)
   });
 
-  const getDayContent = (date: Date) => {
+  const getDayStats = (date: Date) => {
       const dateStr = format(date, 'yyyy-MM-dd');
-      const logs = data.logs.filter(l => l.date === dateStr && l.completed);
-      const createdTasks = data.tasks.filter(t => t.createdAt.startsWith(dateStr));
-      return { logs, createdTasks };
+      
+      // Completed count: Number of logs for habits on this day
+      const completedLogs = data.logs.filter(l => l.date === dateStr && l.completed);
+      const completedCount = completedLogs.length;
+
+      // Active Habits count for this day
+      // A task is active if:
+      // 1. It is a 'habit'
+      // 2. createdAt <= date
+      // 3. startDate <= date
+      // 4. (endDate >= date OR no endDate)
+      // 5. (not deleted OR deletedAt > date) - simplified as just isDeleted check doesn't handle date, assume deleted tasks are gone from view or we ignore deletion date for now
+      
+      const activeHabits = data.tasks.filter(t => {
+          if (t.category !== 'habit') return false;
+          const start = parseISO(t.startDate);
+          const end = t.endDate ? parseISO(t.endDate) : null;
+          
+          if (isAfter(start, date)) return false; // Started after this date
+          if (end && isBefore(end, date)) return false; // Ended before this date
+          
+          return true;
+      });
+
+      const totalCount = activeHabits.length;
+      
+      return { completedCount, totalCount, logs: completedLogs };
   };
 
   const isDateLocked = (date: Date) => {
-    // Logic: Future locked. Past 3 days open.
     if (isFuture(date) && !isToday(date)) return true;
-    const threeDaysAgo = subDays(new Date(), 3);
-    // Allow if date is after or equal to three days ago
-    // Simple lock for future only as per prompt strictly saying "future days are locked"
-    // Prompt also says "user can only mark past 3 days", so older than 3 days also locked?
-    // "user can only mark past 3 days and present days future days are locked"
-    if (date < threeDaysAgo) return false; // Usually calendar shows history, lock marking not viewing.
     return false;
   };
   
@@ -70,16 +87,24 @@ const CalendarPage: React.FC = () => {
               ))}
               
               {daysInMonth.map(date => {
-                  const { logs } = getDayContent(date);
+                  const { completedCount, totalCount } = getDayStats(date);
                   const locked = isFuture(date) && !isToday(date);
-                  const isPastLimit = date < subDays(new Date(), 3);
+                  
+                  // Color coding based on completion
+                  let statusColor = "text-gray-400";
+                  if (totalCount > 0) {
+                      const ratio = completedCount / totalCount;
+                      if (ratio === 1) statusColor = "text-green-400";
+                      else if (ratio > 0.5) statusColor = "text-yellow-400";
+                      else if (ratio > 0) statusColor = "text-orange-400";
+                  }
                   
                   return (
                       <div 
                         key={date.toString()} 
                         onClick={() => handleDateClick(date)}
                         className={`
-                            min-h-[120px] p-2 border border-white/5 relative transition-colors cursor-pointer group
+                            min-h-[120px] p-2 border border-white/5 relative transition-colors cursor-pointer group flex flex-col justify-between
                             ${isToday(date) ? 'bg-indigo-900/30' : 'hover:bg-white/5'}
                             ${locked ? 'opacity-50 cursor-not-allowed' : ''}
                         `}
@@ -91,12 +116,13 @@ const CalendarPage: React.FC = () => {
                               {locked && <Lock size={12} className="text-gray-600" />}
                           </div>
                           
-                          <div className="mt-2 space-y-1">
-                              {logs.slice(0, 3).map((log, idx) => (
-                                  <div key={idx} className="h-1.5 w-full bg-green-500 rounded-full opacity-70"></div>
-                              ))}
-                              {logs.length > 3 && <div className="text-[10px] text-gray-500">+{logs.length - 3} more</div>}
-                          </div>
+                          {!locked && totalCount > 0 && (
+                              <div className="self-end mt-2">
+                                  <span className={`text-xl font-bold ${statusColor}`}>
+                                      {completedCount}/{totalCount}
+                                  </span>
+                              </div>
+                          )}
                       </div>
                   );
               })}
@@ -110,18 +136,20 @@ const CalendarPage: React.FC = () => {
                    <div className="p-4 bg-green-500/10 rounded-xl border border-green-500/20">
                        <h4 className="font-bold text-green-400 mb-2">Completed</h4>
                        <ul className="list-disc list-inside text-sm text-gray-300">
-                           {getDayContent(selectedDate).logs.map((l, i) => {
+                           {getDayStats(selectedDate).logs.map((l, i) => {
                                const taskName = data.tasks.find(t => t.id === l.taskId)?.name || 'Unknown Task';
                                return <li key={i}>{taskName}</li>;
                            })}
-                           {getDayContent(selectedDate).logs.length === 0 && <li>No tasks completed.</li>}
+                           {getDayStats(selectedDate).logs.length === 0 && <li>No tasks completed.</li>}
                        </ul>
                    </div>
                    <div className="p-4 bg-red-500/10 rounded-xl border border-red-500/20">
-                        <h4 className="font-bold text-red-400 mb-2">Pending (Task Count)</h4>
-                        {/* Simplified logic: Total active tasks minus completed tasks count */}
+                        <h4 className="font-bold text-red-400 mb-2">Completion Rate</h4>
                         <p className="text-2xl font-bold">
-                            {Math.max(0, data.tasks.length - getDayContent(selectedDate).logs.length)}
+                            {(() => {
+                                const { completedCount, totalCount } = getDayStats(selectedDate);
+                                return totalCount > 0 ? `${Math.round((completedCount / totalCount) * 100)}%` : 'N/A';
+                            })()}
                         </p>
                    </div>
                </div>

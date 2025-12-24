@@ -50,7 +50,9 @@ const AppContent = () => {
    // Location listener for sound effects
    const location = useLocation();
    useEffect(() => {
-     playSound('click');
+     if (location.pathname !== '/login') {
+         playSound('nav');
+     }
    }, [location.pathname]);
 
    return (

@@ -61,30 +61,51 @@ export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
 
 export const SparkleEffect: React.FC<{ active: boolean }> = ({ active }) => {
   if (!active) return null;
+  // Modern explosive sparkles from center
   return (
     <div className="fixed inset-0 pointer-events-none z-[60] flex items-center justify-center">
-       <div className="animate-sparkle text-6xl text-yellow-300">✨</div>
-       <div className="animate-sparkle text-6xl text-pink-300 absolute -top-10 -left-10" style={{animationDelay: '0.1s'}}>✨</div>
-       <div className="animate-sparkle text-6xl text-blue-300 absolute -bottom-10 -right-10" style={{animationDelay: '0.2s'}}>✨</div>
+       {Array.from({length: 12}).map((_, i) => (
+         <div 
+            key={i}
+            className="absolute w-2 h-2 bg-yellow-300 rounded-full animate-boom"
+            style={{
+                transform: `rotate(${i * 30}deg) translate(0, 0)`,
+                '--tw-translate-y': `-${100 + Math.random() * 50}px`
+            } as any}
+         ></div>
+       ))}
+       <div className="animate-boom absolute w-32 h-32 border-4 border-indigo-400 rounded-full opacity-0"></div>
     </div>
   );
 };
+
+export const BoomEffect: React.FC<{ active: boolean }> = ({ active }) => {
+    if (!active) return null;
+    return (
+        <div className="fixed inset-0 pointer-events-none z-[70] flex items-center justify-center">
+             <div className="absolute w-full h-1 bg-white/50 animate-boom" style={{transform: 'rotate(0deg)'}}></div>
+             <div className="absolute w-full h-1 bg-white/50 animate-boom" style={{transform: 'rotate(45deg)'}}></div>
+             <div className="absolute w-full h-1 bg-white/50 animate-boom" style={{transform: 'rotate(90deg)'}}></div>
+             <div className="absolute w-full h-1 bg-white/50 animate-boom" style={{transform: 'rotate(135deg)'}}></div>
+             
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center scale-150 transition-transform duration-500">
+                 <h1 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-500 to-purple-500 animate-[pulse_0.5s_ease-in-out]">
+                     LEVEL UP!
+                 </h1>
+             </div>
+        </div>
+    );
+}
 
 export const FireworksEffect: React.FC<{ active: boolean }> = ({ active }) => {
     if (!active) return null;
     return (
         <div className="fixed inset-0 pointer-events-none z-[70] overflow-hidden">
-             {/* Simulating fireworks with CSS particles for simplicity in this env */}
+             {/* Simulating fireworks with CSS particles */}
              <div className="absolute top-1/2 left-1/2 w-4 h-4 bg-red-500 rounded-full animate-[ping_1s_ease-out_infinite]"></div>
              <div className="absolute top-1/3 left-1/3 w-4 h-4 bg-blue-500 rounded-full animate-[ping_1.2s_ease-out_infinite]"></div>
              <div className="absolute top-1/3 left-2/3 w-4 h-4 bg-green-500 rounded-full animate-[ping_0.8s_ease-out_infinite]"></div>
              <div className="absolute top-2/3 left-1/2 w-4 h-4 bg-yellow-500 rounded-full animate-[ping_1.5s_ease-out_infinite]"></div>
-             
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-                 <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-pink-600 animate-pulse">
-                     Amazing Job! 🎆
-                 </h1>
-             </div>
         </div>
     );
 }

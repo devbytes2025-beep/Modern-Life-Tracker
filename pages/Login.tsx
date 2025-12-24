@@ -1,25 +1,33 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
-import { Button, Input, Card } from '../components/UI';
+import { Button, Input, Card, Select } from '../components/UI';
 import { useNavigate } from 'react-router-dom';
-import { playSound } from '../constants';
+import { playSound, SECURITY_QUESTIONS } from '../constants';
 
 const Login: React.FC = () => {
   const { loginUser } = useApp();
   const navigate = useNavigate();
   const [isSignup, setIsSignup] = useState(false);
+  const [securityMethod, setSecurityMethod] = useState<'key' | 'question'>('question');
+  
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     email: '',
+    securityQuestion: SECURITY_QUESTIONS[0],
     secretKeyAnswer: '',
     confirmPassword: ''
   });
   const [error, setError] = useState('');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const validateUsername = (username: string) => {
+      const regex = /^[a-zA-Z0-9_]{3,16}$/;
+      return regex.test(username);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,14 +37,17 @@ const Login: React.FC = () => {
     
     try {
       if (isSignup) {
+        if (!validateUsername(formData.username)) {
+            throw new Error("Username must be 3-16 characters, alphanumeric or underscore only.");
+        }
         if (formData.password !== formData.confirmPassword) throw new Error("Passwords do not match");
-        if (!formData.secretKeyAnswer) throw new Error("Secret Answer required for recovery");
+        if (!formData.secretKeyAnswer) throw new Error("Security answer required");
         
         const user = await backend.register({
             username: formData.username,
             email: formData.email,
             secretKeyAnswer: formData.secretKeyAnswer,
-            // In real app password would be separate
+            securityQuestion: securityMethod === 'question' ? formData.securityQuestion : undefined
         });
         loginUser(user);
       } else {
@@ -64,7 +75,7 @@ const Login: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input 
             name="username" 
-            placeholder="Username" 
+            placeholder="Username (Alphanumeric, 3-16 chars)" 
             value={formData.username} 
             onChange={handleChange} 
             required 
@@ -100,19 +111,57 @@ const Login: React.FC = () => {
                     onChange={handleChange} 
                     required 
                 />
-                <Input 
-                    name="secretKeyAnswer" 
-                    placeholder="Secret Key (What is your pet's name?)" 
-                    value={formData.secretKeyAnswer} 
-                    onChange={handleChange} 
-                    required 
-                />
+                
+                <div className="pt-2">
+                    <label className="text-sm text-gray-400 mb-1 block">Security Method</label>
+                    <div className="flex gap-2 mb-2">
+                        <Button 
+                            type="button" 
+                            variant={securityMethod === 'question' ? 'primary' : 'ghost'}
+                            onClick={() => setSecurityMethod('question')}
+                            className="flex-1 py-1 text-sm"
+                        >
+                            Question
+                        </Button>
+                        <Button 
+                            type="button" 
+                            variant={securityMethod === 'key' ? 'primary' : 'ghost'}
+                            onClick={() => setSecurityMethod('key')}
+                            className="flex-1 py-1 text-sm"
+                        >
+                            Secret Key
+                        </Button>
+                    </div>
+
+                    {securityMethod === 'question' ? (
+                        <Select 
+                            name="securityQuestion"
+                            value={formData.securityQuestion}
+                            onChange={handleChange}
+                            className="mb-2"
+                        >
+                            {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
+                        </Select>
+                    ) : (
+                        <div className="text-xs text-indigo-300 mb-2 p-2 bg-indigo-900/20 rounded">
+                            Use a unique phrase only you know.
+                        </div>
+                    )}
+                    
+                    <Input 
+                        name="secretKeyAnswer" 
+                        placeholder="Your Answer" 
+                        value={formData.secretKeyAnswer} 
+                        onChange={handleChange} 
+                        required 
+                    />
+                </div>
             </>
           )}
 
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-          <Button type="submit" className="w-full justify-center">
+          <Button type="submit" className="w-full justify-center mt-6">
             {isSignup ? 'Sign Up' : 'Login'}
           </Button>
 
@@ -121,12 +170,6 @@ const Login: React.FC = () => {
                  {isSignup ? 'Already have an account? Login' : 'Create an account'}
              </button>
              {!isSignup && <button type="button" className="hover:text-white transition-colors">Forgot Password?</button>}
-          </div>
-
-          <div className="mt-6 border-t border-white/10 pt-4">
-             <Button type="button" variant="ghost" className="w-full text-sm">
-                 Continue with Google (Simulated)
-             </Button>
           </div>
         </form>
       </Card>

@@ -1,11 +1,52 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../App';
 import { Card, Button } from '../components/UI';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { TaskType } from '../types';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, format, isWithinInterval, parseISO } from 'date-fns';
 
 const Analytics: React.FC = () => {
-  const { data } = useApp();
+  const { data, user } = useApp();
+
+  // --- Reports Logic ---
+
+  const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const currentWeekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  const currentMonthStart = startOfMonth(new Date());
+  const currentMonthEnd = endOfMonth(new Date());
+
+  const getStatsForPeriod = (start: Date, end: Date) => {
+      // Filter logs within period
+      const logsInPeriod = data.logs.filter(l => {
+          const d = parseISO(l.date);
+          return isWithinInterval(d, { start, end });
+      });
+
+      const totalCompleted = logsInPeriod.length;
+      
+      // Calculate active habits potential (approximate)
+      const days = eachDayOfInterval({ start, end });
+      let totalPotential = 0;
+      
+      data.tasks.filter(t => t.category === 'habit').forEach(t => {
+         // Simply assume active for whole period for simplicity in this view
+         // In real app, calculate overlap of task duration with period
+         totalPotential += days.length; 
+      });
+
+      const completionRate = totalPotential > 0 ? Math.round((totalCompleted / totalPotential) * 100) : 0;
+      
+      const expensesInPeriod = data.expenses
+          .filter(e => isWithinInterval(parseISO(e.date), { start, end }))
+          .reduce((sum, e) => sum + Number(e.amount), 0);
+          
+      return { totalCompleted, completionRate, expensesInPeriod };
+  };
+
+  const weeklyStats = getStatsForPeriod(currentWeekStart, currentWeekEnd);
+  const monthlyStats = getStatsForPeriod(currentMonthStart, currentMonthEnd);
+
+  // --- Charts Logic ---
 
   // Prepare data for Task Completion per Type (Pie)
   const typeCounts = data.tasks.reduce((acc, task) => {
@@ -44,8 +85,57 @@ const Analytics: React.FC = () => {
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-          <h2 className="text-3xl font-bold">Analytics</h2>
+          <h2 className="text-3xl font-bold">Analytics & Reports</h2>
           <Button onClick={handleExport} variant="ghost">Export Report (JSON)</Button>
+      </div>
+
+      {/* Reports Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card className="bg-gradient-to-br from-indigo-900/40 to-violet-900/40 border-indigo-500/30">
+              <h3 className="text-xl font-bold mb-4 flex justify-between">
+                  <span>Weekly Summary</span>
+                  <span className="text-sm font-normal text-indigo-300">
+                      {format(currentWeekStart, 'MMM d')} - {format(currentWeekEnd, 'MMM d')}
+                  </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-white/5 rounded-xl">
+                      <p className="text-sm text-gray-400">Habits Done</p>
+                      <p className="text-2xl font-bold">{weeklyStats.totalCompleted}</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-xl">
+                      <p className="text-sm text-gray-400">Completion Rate</p>
+                      <p className="text-2xl font-bold text-green-400">{weeklyStats.completionRate}%</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-xl col-span-2">
+                      <p className="text-sm text-gray-400">Total Spent</p>
+                      <p className="text-2xl font-bold text-red-300">₹{weeklyStats.expensesInPeriod.toFixed(2)}</p>
+                  </div>
+              </div>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-pink-900/40 to-rose-900/40 border-pink-500/30">
+              <h3 className="text-xl font-bold mb-4 flex justify-between">
+                  <span>Monthly Summary</span>
+                  <span className="text-sm font-normal text-pink-300">
+                      {format(currentMonthStart, 'MMMM yyyy')}
+                  </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-white/5 rounded-xl">
+                      <p className="text-sm text-gray-400">Habits Done</p>
+                      <p className="text-2xl font-bold">{monthlyStats.totalCompleted}</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-xl">
+                      <p className="text-sm text-gray-400">Completion Rate</p>
+                      <p className="text-2xl font-bold text-green-400">{monthlyStats.completionRate}%</p>
+                  </div>
+                  <div className="p-3 bg-white/5 rounded-xl col-span-2">
+                      <p className="text-sm text-gray-400">Total Spent</p>
+                      <p className="text-2xl font-bold text-red-300">₹{monthlyStats.expensesInPeriod.toFixed(2)}</p>
+                  </div>
+              </div>
+          </Card>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
