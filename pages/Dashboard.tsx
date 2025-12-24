@@ -18,7 +18,8 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const pendingTodos = data.todos.filter(t => !t.completed).length;
-  const habits = data.tasks.filter(t => t.category === 'habit');
+  // Include both Habits and Goals for streak tracking
+  const trackedTasks = data.tasks.filter(t => t.category === 'habit' || t.category === 'goal');
   
   // --- Streak Logic ---
   const calculateStreak = (taskId: string, logs: TaskLog[]) => {
@@ -57,7 +58,7 @@ const Dashboard: React.FC = () => {
       return { streak: currentStreak, lastDate: lastLogDateStr, brokenDate: null };
   };
 
-  const streakData = habits.map(h => ({ ...h, ...calculateStreak(h.id, data.logs) }));
+  const streakData = trackedTasks.map(h => ({ ...h, ...calculateStreak(h.id, data.logs) }));
   
   const brokenStreaks = streakData.filter(s => s.streak === 0 && s.brokenDate !== null)
                                   .sort((a, b) => (b.brokenDate || '').localeCompare(a.brokenDate || ''));
@@ -143,13 +144,18 @@ const Dashboard: React.FC = () => {
                               </div>
                               <div>
                                   <p className="font-medium">{h.name}</p>
-                                  <p className="text-xs text-gray-400">Last done: {h.lastDate}</p>
+                                  <Badge color={h.category === 'goal' ? 'bg-blue-500/20 text-blue-200' : 'bg-green-500/20 text-green-200'}>
+                                      {h.category.toUpperCase()}
+                                  </Badge>
+                                  <p className="text-xs text-gray-400 mt-1">Last done: {h.lastDate}</p>
                               </div>
                           </div>
-                          <Badge color="bg-orange-500/10 text-orange-300">Active</Badge>
+                          <div className="flex flex-col items-end">
+                            <Badge color="bg-orange-500/10 text-orange-300">Active</Badge>
+                          </div>
                       </div>
                   ))}
-                  {activeStreaks.length === 0 && <p className="text-gray-500 text-center py-4 col-span-2">Start a habit to see streaks!</p>}
+                  {activeStreaks.length === 0 && <p className="text-gray-500 text-center py-4 col-span-2">Start a habit or goal to see streaks!</p>}
                </div>
            </Card>
 

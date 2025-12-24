@@ -18,20 +18,21 @@ const CalendarPage: React.FC = () => {
   const getDayStats = (date: Date) => {
       const dateStr = format(date, 'yyyy-MM-dd');
       
-      // Completed count: Number of logs for habits on this day
+      // Completed count: Number of logs for habits/goals on this day
       const completedLogs = data.logs.filter(l => l.date === dateStr && l.completed);
       const completedCount = completedLogs.length;
 
-      // Active Habits count for this day
+      // Active Habits/Goals count for this day
       // A task is active if:
-      // 1. It is a 'habit'
+      // 1. It is a 'habit' OR 'goal'
       // 2. createdAt <= date
       // 3. startDate <= date
       // 4. (endDate >= date OR no endDate)
-      // 5. (not deleted OR deletedAt > date) - simplified as just isDeleted check doesn't handle date, assume deleted tasks are gone from view or we ignore deletion date for now
       
-      const activeHabits = data.tasks.filter(t => {
-          if (t.category !== 'habit') return false;
+      const activeTasks = data.tasks.filter(t => {
+          // Include both habits and goals
+          if (t.category !== 'habit' && t.category !== 'goal') return false;
+          
           const start = parseISO(t.startDate);
           const end = t.endDate ? parseISO(t.endDate) : null;
           
@@ -41,7 +42,7 @@ const CalendarPage: React.FC = () => {
           return true;
       });
 
-      const totalCount = activeHabits.length;
+      const totalCount = activeTasks.length;
       
       return { completedCount, totalCount, logs: completedLogs };
   };
@@ -137,8 +138,9 @@ const CalendarPage: React.FC = () => {
                        <h4 className="font-bold text-green-400 mb-2">Completed</h4>
                        <ul className="list-disc list-inside text-sm text-gray-300">
                            {getDayStats(selectedDate).logs.map((l, i) => {
-                               const taskName = data.tasks.find(t => t.id === l.taskId)?.name || 'Unknown Task';
-                               return <li key={i}>{taskName}</li>;
+                               const task = data.tasks.find(t => t.id === l.taskId);
+                               const taskName = task?.name || 'Unknown Task';
+                               return <li key={i}>{taskName} <span className="text-xs text-gray-500">({task?.category})</span></li>;
                            })}
                            {getDayStats(selectedDate).logs.length === 0 && <li>No tasks completed.</li>}
                        </ul>

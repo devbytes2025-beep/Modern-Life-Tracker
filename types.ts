@@ -17,6 +17,8 @@ export enum TaskType {
   HEALTH = 'HEALTH',
   WEALTH = 'WEALTH',
   PERSONAL = 'PERSONAL',
+  CAREER = 'CAREER',
+  RELATIONSHIPS = 'RELATIONSHIPS',
   OTHER = 'OTHER'
 }
 
@@ -64,6 +66,7 @@ export interface Expense {
 export interface JournalEntry {
   id: string;
   userId: string;
+  subject: string;
   content: string;
   mood: string; // Emoji char
   images?: string[];
