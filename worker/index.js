@@ -11,18 +11,31 @@ async function hashPassword(password) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname.replace('/api', ''); 
+    
+    // Robust Path Normalization:
+    // 1. Remove '/api' prefix if present
+    // 2. Remove trailing slash to ensure consistency (e.g. /auth/login/ -> /auth/login)
+    let path = url.pathname.replace('/api', '');
+    if (path.endsWith('/') && path.length > 1) {
+        path = path.slice(0, -1);
+    }
+
     const method = request.method;
 
-    // CORS Headers
+    // Robust CORS Headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      'Access-Control-Max-Age': '86400',
     };
 
+    // 1. Handle Preflight Request immediately
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { 
+        status: 204, 
+        headers: corsHeaders 
+      });
     }
 
     try {
@@ -37,7 +50,6 @@ export default {
           }
 
           // Fetch user
-          // We support login by username OR email
           const user = await env.DB.prepare(`
              SELECT * FROM users WHERE username = ? OR email = ?
           `).bind(username, username).first();
@@ -52,8 +64,7 @@ export default {
              return new Response(JSON.stringify({ error: 'Invalid credentials' }), { status: 401, headers: corsHeaders });
           }
 
-          // Generate Simple Token (Base64 of user info + expiry)
-          // In a production app, use signed JWTs (RS256/HS256)
+          // Generate Simple Token
           const sessionData = JSON.stringify({
              id: user.id,
              username: user.username,
@@ -61,7 +72,6 @@ export default {
           });
           const token = btoa(sessionData);
 
-          // Return user (without password) and token
           const { password: _, ...userWithoutPass } = user;
           return new Response(JSON.stringify({ user: userWithoutPass, token }), { headers: corsHeaders });
       }
@@ -70,12 +80,10 @@ export default {
       if (path === '/auth/register' && method === 'POST') {
           const user = await request.json();
           
-          // Basic validation
           if (!user.username || !user.email || !user.password) {
               return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: corsHeaders });
           }
 
-          // Check existing
           const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ? OR email = ?').bind(user.username, user.email).first();
           if (existing) {
               return new Response(JSON.stringify({ error: 'Username or Email already exists' }), { status: 409, headers: corsHeaders });
@@ -93,7 +101,6 @@ export default {
                 user.secretKeyAnswer, user.securityQuestion, 'dark', 0, Date.now()
             ).run();
 
-            // Auto-login after register
             const sessionData = JSON.stringify({
                 id: userId,
                 username: user.username,
@@ -147,7 +154,6 @@ export default {
           }
       }
 
-      // Password Reset (Reset Data wipe)
       if (path === '/reset-data' && method === 'POST') {
           const { secretKeyAnswer } = await request.json();
           const user = await env.DB.prepare('SELECT secretKeyAnswer FROM users WHERE id = ?').bind(userId).first();
@@ -167,7 +173,6 @@ export default {
           return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
-      // Fetch All Data
       if (path === '/data' && method === 'GET') {
           const [tasks, logs, todos, expenses, journal] = await Promise.all([
               env.DB.prepare('SELECT * FROM tasks WHERE user_id = ?').bind(userId).all(),
@@ -181,7 +186,6 @@ export default {
           const safeJournal = journal.results.map(j => ({...j, images: j.images ? JSON.parse(j.images) : []}));
           const safeTodos = todos.results.map(t => ({...t, completed: t.completed === 1}));
           
-          // CamelCase mapping
           const mapKeys = (obj) => {
              const newObj = {};
              for(let key in obj) {
@@ -206,10 +210,8 @@ export default {
       const itemId = parts[2];
 
       if (['tasks', 'logs', 'todos', 'expenses', 'journal'].includes(collection)) {
-          
           if (method === 'POST') {
               const item = await request.json();
-              // Remove injected userId if present in body to avoid duplicates, we use one from token
               const { userId: _, ...itemData } = item;
               
               const keys = Object.keys(itemData);
@@ -227,7 +229,6 @@ export default {
 
           if (method === 'PUT' && itemId) {
               const item = await request.json();
-              // Filter out IDs and userId from update fields
               const keys = Object.keys(item).filter(k => k !== 'id' && k !== 'userId');
               const sets = keys.map(k => `${k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)} = ?`).join(', ');
               const vals = keys.map(k => {
@@ -251,6 +252,7 @@ export default {
       return new Response('Not Found', { status: 404, headers: corsHeaders });
 
     } catch (err) {
+      // Catch-all for runtime errors (like DB connection failed) to ensure CORS headers are sent
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
     }
   },
