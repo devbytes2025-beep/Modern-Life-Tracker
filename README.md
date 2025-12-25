@@ -1,20 +1,54 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# GlassHabit Tracker
 
-# Run and deploy your AI Studio app
+A modern, glassmorphism-styled habit tracker built with React, Tailwind CSS, and Cloudflare Workers (D1 Database).
 
-This contains everything you need to run your app locally.
+## Setup Guide
 
-View your app in AI Studio: https://ai.studio/apps/drive/1drWitzJLeJVmIZExb2lHB87YaoX1NHdy
+### 1. Prerequisites
+- Node.js installed
+- Cloudflare account (for Wrangler)
 
-## Run Locally
+### 2. Installation
+Open your terminal **inside this project folder** and run:
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+```
 
+### 3. Database Setup (Cloudflare D1)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. **Create the Database:**
+   ```bash
+   npm run db:create
+   ```
+   *Copy the `database_id` from the output and paste it into `wrangler.toml`.*
+
+2. **Initialize Tables:**
+   ```bash
+   npm run db:init
+   ```
+   *This runs the `worker/schema.sql` file on your remote database.*
+
+### 4. Deploy Backend
+```bash
+npm run deploy:worker
+```
+*Note the URL provided after deployment (e.g., `https://glasshabit-worker.yourname.workers.dev`).*
+
+### 5. Connect Frontend
+Create a `.env` file in the root directory:
+```
+VITE_API_URL=https://glasshabit-worker.yourname.workers.dev/api
+```
+
+### 6. Run Frontend
+```bash
+npm run dev
+```
+
+## Features
+- **Habit Tracking:** Streaks, logs, and categories.
+- **Gamification:** Earn XP for completing tasks.
+- **Journal:** Record your daily mood and thoughts.
+- **Finance:** Track simple expenses.
+- **AI Integration:** Daily motivational quotes via Gemini.

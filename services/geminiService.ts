@@ -16,6 +16,6 @@ export const getMotivationalQuote = async (): Promise<string> => {
     return response.text || "Keep pushing forward.";
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Consistecy is the key to success.";
+    return "Consistency is the key to success.";
   }
 };

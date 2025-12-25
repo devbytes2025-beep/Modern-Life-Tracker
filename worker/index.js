@@ -1,11 +1,17 @@
-
 // Cloudflare Worker - ES Module Syntax
-// You must bind your D1 database to the variable name 'DB' in wrangler.toml
+
+// Helper: Hash Password using Web Crypto API
+async function hashPassword(password) {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname.replace('/api', ''); // Strip prefix
+    const path = url.pathname.replace('/api', ''); 
     const method = request.method;
 
     // CORS Headers
@@ -20,76 +26,114 @@ export default {
     }
 
     try {
-      // --- Public Routes ---
-      
-      // Resolve Email from Username (for Login)
-      if (path === '/resolve-email' && method === 'POST') {
-          const { username } = await request.json();
-          const user = await env.DB.prepare('SELECT email FROM users WHERE username = ?').bind(username).first();
-          if (!user) return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: corsHeaders });
-          return new Response(JSON.stringify({ email: user.email }), { headers: corsHeaders });
+      // --- Public Auth Routes ---
+
+      // LOGIN
+      if (path === '/auth/login' && method === 'POST') {
+          const { username, password } = await request.json();
+          
+          if (!username || !password) {
+            return new Response(JSON.stringify({ error: 'Missing credentials' }), { status: 400, headers: corsHeaders });
+          }
+
+          // Fetch user
+          // We support login by username OR email
+          const user = await env.DB.prepare(`
+             SELECT * FROM users WHERE username = ? OR email = ?
+          `).bind(username, username).first();
+
+          if (!user) {
+             return new Response(JSON.stringify({ error: 'Invalid credentials' }), { status: 401, headers: corsHeaders });
+          }
+
+          // Verify Password
+          const hashed = await hashPassword(password);
+          if (user.password !== hashed) {
+             return new Response(JSON.stringify({ error: 'Invalid credentials' }), { status: 401, headers: corsHeaders });
+          }
+
+          // Generate Simple Token (Base64 of user info + expiry)
+          // In a production app, use signed JWTs (RS256/HS256)
+          const sessionData = JSON.stringify({
+             id: user.id,
+             username: user.username,
+             exp: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 days
+          });
+          const token = btoa(sessionData);
+
+          // Return user (without password) and token
+          const { password: _, ...userWithoutPass } = user;
+          return new Response(JSON.stringify({ user: userWithoutPass, token }), { headers: corsHeaders });
       }
 
-      // Register User
-      if (path === '/users' && method === 'POST') {
-          const authHeader = request.headers.get('Authorization');
-          if (!authHeader) return new Response(JSON.stringify({ error: 'No Auth' }), { status: 401, headers: corsHeaders });
-          
-          // In production, verify the Firebase JWT here. 
-          // For now, we trust the Client sends the correct UID in the body matching the token subject, 
-          // or we blindly decode. *Use a JWT library in production*.
-          // Simplification: We accept the user data provided.
-          
+      // REGISTER
+      if (path === '/auth/register' && method === 'POST') {
           const user = await request.json();
+          
+          // Basic validation
+          if (!user.username || !user.email || !user.password) {
+              return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: corsHeaders });
+          }
+
+          // Check existing
+          const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ? OR email = ?').bind(user.username, user.email).first();
+          if (existing) {
+              return new Response(JSON.stringify({ error: 'Username or Email already exists' }), { status: 409, headers: corsHeaders });
+          }
+
+          const hashedPassword = await hashPassword(user.password);
+          const userId = crypto.randomUUID();
+          
           try {
             await env.DB.prepare(`
-                INSERT INTO users (id, username, email, secretKeyAnswer, securityQuestion, theme, points, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (id, username, email, password, secretKeyAnswer, securityQuestion, theme, points, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).bind(
-                user.id, user.username, user.email, user.secretKeyAnswer, 
-                user.securityQuestion, 'dark', 0, Date.now()
+                userId, user.username, user.email, hashedPassword, 
+                user.secretKeyAnswer, user.securityQuestion, 'dark', 0, Date.now()
             ).run();
-            return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+
+            // Auto-login after register
+            const sessionData = JSON.stringify({
+                id: userId,
+                username: user.username,
+                exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+             });
+             const token = btoa(sessionData);
+
+             const newUser = { ...user, id: userId, password: undefined, points: 0, theme: 'dark' };
+             return new Response(JSON.stringify({ user: newUser, token }), { headers: corsHeaders });
           } catch (e) {
-             return new Response(JSON.stringify({ error: e.message }), { status: 409, headers: corsHeaders });
+             return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
           }
       }
 
-      // --- Protected Routes Middleware ---
-      // Simple Mock Verification: Extract UID from Bearer Token (Simulated)
-      // REAL WORLD: Decode and Verify Firebase JWT signature using 'jose' library
+      // --- Middleware: Verify Token ---
       const authHeader = request.headers.get('Authorization');
       if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
       
-      // We assume the frontend passed a valid token. 
-      // We will look up the user ID based on the token. 
-      // *CRITICAL*: In a real deployment, you must verify the token signature.
-      // Since we can't easily install packages here, we will fetch the User Profile by matching the ID 
-      // passed in the token (Assuming we decoded it, or for this specific setup, 
-      // we can ask the client to send UID in a header, but let's do a lookup).
-      
-      // Hack for demo: We will query the DB using the Authorization header as the UID directly 
-      // OR you configure the client to send the UID. 
-      // BETTER: The client sends a JWT. We can't verify it easily without 'jose'. 
-      // So, we will implement a "Trust" flow where we assume the ID is correct 
-      // OR we just use the user.id passed in the payload for writes.
-      
-      // Let's assume the standard flow:
-      // 1. Get UID from D1 based on email? No.
-      // 2. Let's make the Client send the UID in a custom header 'X-User-ID' for this demo 
-      //    to avoid complex JWT parsing code in a single file without node_modules.
-      //    Wait, I can decode a JWT payload without verification using standard JS.
-      
-      const token = authHeader.split(' ')[1];
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const userId = payload.user_id || payload.sub; // Firebase UID
+      let userId;
+      try {
+          const token = authHeader.split(' ')[1];
+          const payload = JSON.parse(atob(token));
+          if (payload.exp < Date.now()) {
+              return new Response(JSON.stringify({ error: 'Token expired' }), { status: 401, headers: corsHeaders });
+          }
+          userId = payload.id;
+      } catch (e) {
+          return new Response(JSON.stringify({ error: 'Invalid Token' }), { status: 401, headers: corsHeaders });
+      }
 
       // --- Authenticated Routes ---
 
       if (path === '/user/me') {
           if (method === 'GET') {
               const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
-              return new Response(JSON.stringify(user), { headers: corsHeaders });
+              if (user) {
+                  const { password: _, ...safeUser } = user;
+                  return new Response(JSON.stringify(safeUser), { headers: corsHeaders });
+              }
+              return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: corsHeaders });
           }
           if (method === 'PUT') {
               const updates = await request.json();
@@ -98,10 +142,12 @@ export default {
               `).bind(updates.name, updates.bio, updates.avatar, updates.dob, updates.gender, updates.email, updates.points, userId).run();
               
               const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
-              return new Response(JSON.stringify(user), { headers: corsHeaders });
+              const { password: _, ...safeUser } = user;
+              return new Response(JSON.stringify(safeUser), { headers: corsHeaders });
           }
       }
 
+      // Password Reset (Reset Data wipe)
       if (path === '/reset-data' && method === 'POST') {
           const { secretKeyAnswer } = await request.json();
           const user = await env.DB.prepare('SELECT secretKeyAnswer FROM users WHERE id = ?').bind(userId).first();
@@ -121,8 +167,8 @@ export default {
           return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
 
+      // Fetch All Data
       if (path === '/data' && method === 'GET') {
-          // Fetch all
           const [tasks, logs, todos, expenses, journal] = await Promise.all([
               env.DB.prepare('SELECT * FROM tasks WHERE user_id = ?').bind(userId).all(),
               env.DB.prepare('SELECT * FROM logs WHERE user_id = ?').bind(userId).all(),
@@ -131,22 +177,15 @@ export default {
               env.DB.prepare('SELECT * FROM journal WHERE user_id = ?').bind(userId).all(),
           ]);
 
-          // Parse JSON strings back to arrays
           const safeLogs = logs.results.map(l => ({...l, images: l.images ? JSON.parse(l.images) : [], completed: l.completed === 1}));
           const safeJournal = journal.results.map(j => ({...j, images: j.images ? JSON.parse(j.images) : []}));
           const safeTodos = todos.results.map(t => ({...t, completed: t.completed === 1}));
           
-          // Map DB columns (snake_case) to App types (camelCase) if needed, 
-          // but simpler to adjust frontend or alias in SQL. 
-          // For now, let's just return what we have, assuming Types match roughly 
-          // or we transform manually. To save code size, we assume the Frontend 'cleanData' 
-          // or interface accepts what D1 returns, but D1 returns snake_case for columns usually.
-          // Let's map key fields:
-          
+          // CamelCase mapping
           const mapKeys = (obj) => {
              const newObj = {};
              for(let key in obj) {
-                 const newKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase()); // snake to camel
+                 const newKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
                  newObj[newKey] = obj[key];
              }
              return newObj;
@@ -161,8 +200,7 @@ export default {
           }), { headers: corsHeaders });
       }
 
-      // --- Generic Collection Handling ---
-      
+      // Generic CRUD
       const parts = path.split('/');
       const collection = parts[1];
       const itemId = parts[2];
@@ -171,12 +209,13 @@ export default {
           
           if (method === 'POST') {
               const item = await request.json();
-              const keys = Object.keys(item).filter(k => k !== 'userId'); // user_id injected
-              const vals = Object.values(item).filter((_, i) => Object.keys(item)[i] !== 'userId');
+              // Remove injected userId if present in body to avoid duplicates, we use one from token
+              const { userId: _, ...itemData } = item;
               
-              // Handle JSON arrays
+              const keys = Object.keys(itemData);
+              const vals = Object.values(itemData);
+              
               const finalVals = vals.map(v => Array.isArray(v) ? JSON.stringify(v) : (v === true ? 1 : v === false ? 0 : v));
-              
               const cols = keys.map(k => k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)).join(', ');
               const placeholders = keys.map(() => '?').join(', ');
               
@@ -188,6 +227,7 @@ export default {
 
           if (method === 'PUT' && itemId) {
               const item = await request.json();
+              // Filter out IDs and userId from update fields
               const keys = Object.keys(item).filter(k => k !== 'id' && k !== 'userId');
               const sets = keys.map(k => `${k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)} = ?`).join(', ');
               const vals = keys.map(k => {
