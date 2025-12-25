@@ -1,0 +1,8 @@
+{
+      "name": "modern-life-tracker", // Based on the warning you received
+      "compatibility_date": "2025-12-25",
+      "assets": {
+        "directory": "./dist"
+      }
+    }
+    ```
