@@ -1,9 +1,9 @@
 import { User, AppData, TaskLog, JournalEntry, Todo, Expense, Task } from '../types';
 
 // Use environment variable or default to local worker.
-// Remove trailing slash if present for consistency.
 const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8787/api";
-const API_URL = RAW_API_URL.endsWith('/') ? RAW_API_URL.slice(0, -1) : RAW_API_URL;
+// Ensure no trailing slash
+const API_URL = RAW_API_URL.replace(/\/+$/, "");
 
 export const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -32,7 +32,10 @@ class BackendService {
          ...options.headers
      };
 
-     const response = await fetch(`${API_URL}${endpoint}`, {
+     // Ensure endpoint starts with /
+     const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+     const response = await fetch(`${API_URL}${safeEndpoint}`, {
          ...options,
          headers
      });
@@ -45,7 +48,7 @@ class BackendService {
              this.logout();
              throw new Error("Session expired. Please login again.");
          }
-         throw new Error(data.error || 'API Request Failed');
+         throw new Error(data.error || data.details || 'API Request Failed');
      }
 
      return data;
@@ -87,7 +90,7 @@ class BackendService {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Registration failed");
+      if (!response.ok) throw new Error(data.error || data.details || "Registration failed");
 
       this.setSession(data.token, data.user);
       return data.user;
@@ -101,7 +104,7 @@ class BackendService {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Login failed");
+      if (!response.ok) throw new Error(data.error || data.details || "Login failed");
 
       this.setSession(data.token, data.user);
       return data.user;
