@@ -1,8 +1,1 @@
-name = "glasshabit-worker"
-main = "worker/index.js"
-compatibility_date = "2024-02-08"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "glasshabit-db"
-database_id = "371b67b1-e939-45f3-8354-9d243657b232"
+���
