@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../App';
 import { Card, Button, Input, Select } from '../components/UI';
-import { User as UserIcon, Camera, Save, Trophy } from 'lucide-react';
+import { User as UserIcon, Camera, Save, Trophy, Mail } from 'lucide-react';
 import { backend } from '../services/mockBackend';
 import { playSound } from '../constants';
 import { User } from '../types';
 
 const Profile: React.FC = () => {
-  const { user, updateUser } = useApp();
+  const { user, updateUser, showToast } = useApp();
   const [formData, setFormData] = useState<Partial<User>>({});
   const [isEditing, setIsEditing] = useState(false);
 
@@ -31,9 +31,13 @@ const Profile: React.FC = () => {
           const updated = { ...user, ...formData };
           await backend.updateUser(updated as User);
           updateUser(updated as User); // Update context
+          showToast("Profile updated successfully!", 'success');
           playSound('success');
           setIsEditing(false);
-      } catch (e) { console.error(e); }
+      } catch (e: any) { 
+          console.error(e); 
+          showToast(e.message || "Failed to update profile", 'error');
+      }
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,7 +80,10 @@ const Profile: React.FC = () => {
                     <span>{user.points || 0} Points</span>
                 </div>
                 <p className="text-gray-400 mt-1">@{user.username}</p>
-                <p className="text-sm text-gray-500 mt-1">{user.email}</p>
+                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mt-1">
+                    <Mail size={12} />
+                    {user.email}
+                </div>
                 <Button variant="ghost" className="mt-4" onClick={() => setIsEditing(true)}>Edit Profile</Button>
              </>
         ) : (
@@ -94,6 +101,22 @@ const Profile: React.FC = () => {
                 <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
             ) : (
                 <p className="font-medium">{user.name || 'Not set'}</p>
+            )}
+        </Card>
+
+        <Card>
+            <h3 className="text-gray-400 text-sm mb-2">Email Address</h3>
+            {isEditing ? (
+                <div>
+                    <Input 
+                        type="email"
+                        value={formData.email} 
+                        onChange={e => setFormData({...formData, email: e.target.value})} 
+                    />
+                    <p className="text-[10px] text-yellow-500 mt-1">Changing this will require verification on next login.</p>
+                </div>
+            ) : (
+                <p className="font-medium">{user.email}</p>
             )}
         </Card>
         
@@ -118,11 +141,6 @@ const Profile: React.FC = () => {
             ) : (
                 <p className="font-medium">{user.dob || 'Not set'}</p>
             )}
-        </Card>
-
-        <Card>
-            <h3 className="text-gray-400 text-sm mb-2">User ID</h3>
-            <p className="font-mono text-xs text-gray-500 truncate" title={user.id}>{user.id}</p>
         </Card>
 
         <Card className="md:col-span-2">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
-import { backend } from '../services/mockBackend';
+import { backend, generateUUID } from '../services/mockBackend';
 import { Card, Button, Input, Modal, Select, Badge, SparkleEffect, FireworksEffect, BoomEffect } from '../components/UI';
 import { Plus, Check, Target, Zap, Edit2 } from 'lucide-react';
 import { Task, TaskType, TaskLog } from '../types';
@@ -8,7 +8,7 @@ import { format, isFuture, isToday, subDays, parseISO } from 'date-fns';
 import { playSound } from '../constants';
 
 const Tasks: React.FC = () => {
-  const { user, data, refreshData, updateUser } = useApp();
+  const { user, data, refreshData, updateUser, showToast } = useApp();
   const [isModalOpen, setModalOpen] = useState(false); // Used for both Create and Edit
   const [isMarkModalOpen, setMarkModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -52,20 +52,26 @@ const Tasks: React.FC = () => {
                 ...selectedTask,
                 ...taskForm
             } as Task);
+            showToast("Task updated!", 'success');
             playSound('success');
         } else {
             await backend.addItem(user.id, 'tasks', {
                 ...taskForm,
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 userId: user.id,
                 createdAt: new Date().toISOString()
             } as Task);
+            showToast("New task created!", 'success');
             playSound('success');
         }
         await refreshData();
         setModalOpen(false);
         resetForm();
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+        console.error(e);
+        showToast(e.message || "Failed to save task", 'error');
+        playSound('error');
+    }
   };
 
   const handleMarkClick = (task: Task) => {
@@ -83,7 +89,7 @@ const Tasks: React.FC = () => {
           const logDate = format(today, 'yyyy-MM-dd');
           
           await backend.addItem(user.id, 'logs', {
-              id: crypto.randomUUID(),
+              id: generateUUID(),
               taskId: selectedTask.id,
               date: logDate,
               remark: markData.remark,
@@ -100,6 +106,7 @@ const Tasks: React.FC = () => {
 
           await refreshData();
           setMarkModalOpen(false);
+          showToast(`Completed! +${pointsEarned} Points`, 'success');
           playSound('success');
           
           // Trigger Random Animations for Variety
@@ -112,7 +119,11 @@ const Tasks: React.FC = () => {
              setTimeout(() => setShowSparkle(false), 2000);
           }
 
-      } catch (e) { console.error(e); }
+      } catch (e: any) { 
+          console.error(e);
+          showToast(e.message || "Failed to mark completion", 'error');
+          playSound('error');
+      }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,6 +197,12 @@ const Tasks: React.FC = () => {
                 </div>
             </Card>
         ))}
+        {data.tasks.length === 0 && (
+            <div className="col-span-full text-center py-10 bg-white/5 rounded-2xl border border-dashed border-white/10">
+                <p className="text-gray-400 mb-2">No tasks found. Start your journey!</p>
+                <Button onClick={handleOpenCreate} variant="ghost">Create Your First Habit</Button>
+            </div>
+        )}
       </div>
 
       {/* Task Modal (Create/Edit) */}

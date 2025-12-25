@@ -1,5 +1,5 @@
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 export const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: () => void }> = ({ children, className = '', onClick }) => (
   <div onClick={onClick} className={`glass-panel p-6 rounded-2xl ${className}`}>
@@ -58,6 +58,58 @@ export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
     </div>
   );
 };
+
+// --- Toast System ---
+
+export type ToastType = 'success' | 'error' | 'info';
+
+interface ToastProps {
+  id: string;
+  message: string;
+  type: ToastType;
+  onClose: (id: string) => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ id, message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => onClose(id), 5000);
+    return () => clearTimeout(timer);
+  }, [id, onClose]);
+
+  const icons = {
+    success: <CheckCircle className="text-green-400" size={20} />,
+    error: <AlertCircle className="text-red-400" size={20} />,
+    info: <Info className="text-blue-400" size={20} />
+  };
+
+  const bgColors = {
+    success: 'bg-green-900/40 border-green-500/30',
+    error: 'bg-red-900/40 border-red-500/30',
+    info: 'bg-blue-900/40 border-blue-500/30'
+  };
+
+  return (
+    <div className={`flex items-center gap-3 p-4 rounded-xl border backdrop-blur-md shadow-lg animate-[slideIn_0.3s_ease-out] mb-3 ${bgColors[type]}`}>
+      {icons[type]}
+      <p className="text-sm font-medium text-white">{message}</p>
+      <button onClick={() => onClose(id)} className="ml-auto text-white/50 hover:text-white">
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
+
+export const ToastContainer: React.FC<{ toasts: { id: string; message: string; type: ToastType }[]; removeToast: (id: string) => void }> = ({ toasts, removeToast }) => {
+  return (
+    <div className="fixed top-4 right-4 z-[100] flex flex-col w-full max-w-xs">
+      {toasts.map(t => (
+        <Toast key={t.id} {...t} onClose={removeToast} />
+      ))}
+    </div>
+  );
+};
+
+// --- Animations ---
 
 export const SparkleEffect: React.FC<{ active: boolean }> = ({ active }) => {
   if (!active) return null;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../App';
-import { backend } from '../services/mockBackend';
+import { backend, generateUUID } from '../services/mockBackend';
 import { Card, Button, Input, FireworksEffect, SparkleEffect, BoomEffect } from '../components/UI';
 import { JournalEntry } from '../types';
 import { format } from 'date-fns';
@@ -10,7 +10,7 @@ import { playSound } from '../constants';
 const MOODS = ['😊', '😐', '😔', '😡', '🥳', '😴', '🤯', '😭', '😎', '🤢', '🤔', '😍'];
 
 const Journal: React.FC = () => {
-  const { user, data, refreshData } = useApp();
+  const { user, data, refreshData, showToast } = useApp();
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
   const [mood, setMood] = useState('😊');
@@ -25,7 +25,10 @@ const Journal: React.FC = () => {
   const [showBoom, setShowBoom] = useState(false);
 
   const handleSave = async () => {
-    if (!user || !content || !subject) return;
+    if (!user || !content || !subject) {
+        showToast("Please fill in subject and content", 'error');
+        return;
+    }
     try {
         if (editingId) {
              const existing = data.journal.find(j => j.id === editingId);
@@ -43,9 +46,10 @@ const Journal: React.FC = () => {
              // Update Animation
              setShowSparkle(true);
              setTimeout(() => setShowSparkle(false), 2000);
+             showToast("Memory updated!", 'success');
         } else {
              await backend.addItem(user.id, 'journal', {
-              id: crypto.randomUUID(),
+              id: generateUUID(),
               userId: user.id,
               subject,
               content,
@@ -62,6 +66,7 @@ const Journal: React.FC = () => {
                 setShowFireworks(true);
                 setTimeout(() => setShowFireworks(false), 2000);
             }, 500);
+            showToast("Memory saved successfully!", 'success');
         }
 
         playSound('success');
@@ -70,7 +75,11 @@ const Journal: React.FC = () => {
         setMood('😊');
         setImages([]);
         refreshData();
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+        console.error(e);
+        showToast(e.message || "Failed to save journal", 'error');
+        playSound('error');
+    }
   };
 
   const handleEdit = (entry: JournalEntry) => {
@@ -88,8 +97,9 @@ const Journal: React.FC = () => {
       try {
           await backend.deleteItem(user.id, 'journal', id);
           playSound('delete');
+          showToast("Entry deleted", 'info');
           refreshData();
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error(e); showToast("Failed to delete", 'error'); }
   };
 
    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

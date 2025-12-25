@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { User, AppData, Task, TaskLog } from './types';
-import { backend } from './services/mockBackend';
+import { backend, generateUUID } from './services/mockBackend';
 import { Layout } from './components/Layout';
 import { getMotivationalQuote } from './services/geminiService';
+import { ToastContainer, ToastType } from './components/UI';
 
 // Pages
 import Login from './pages/Login';
@@ -29,6 +30,7 @@ interface AppContextType {
   updateUser: (u: User) => void;
   logoutUser: () => void;
   dailyQuote: string;
+  showToast: (message: string, type: ToastType) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -41,7 +43,12 @@ export const useApp = () => {
 
 const ProtectedRoute = ({ children }: { children?: React.ReactNode }) => {
   const { user, isLoading } = useApp();
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-white">Loading...</div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-white bg-black/90">
+      <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="animate-pulse">Loading GlassHabit...</p>
+      </div>
+  </div>;
   if (!user) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
 };
@@ -77,36 +84,72 @@ const App = () => {
   const [data, setData] = useState<AppData>({ tasks: [], logs: [], todos: [], expenses: [], journal: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [dailyQuote, setDailyQuote] = useState("Loading inspiration...");
+  
+  // Toast State
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([]);
+
+  const showToast = (message: string, type: ToastType) => {
+      const id = generateUUID();
+      setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id: string) => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   const refreshData = async () => {
     if (user) {
-      const d = await backend.getData(user.id);
-      setData(d);
+      try {
+          const d = await backend.getData(user.id);
+          setData(d);
+      } catch (e) {
+          console.error(e);
+          showToast("Failed to refresh data", "error");
+      }
     }
   };
 
   useEffect(() => {
-    // Check session
-    const storedUser = localStorage.getItem('glasshabit_user');
-    if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        backend.getData(parsedUser.id).then(setData).finally(() => setIsLoading(false));
-    } else {
+    // Correctly handle auth persistence using Firebase observer
+    const unsubscribe = backend.subscribeToAuth(async (u) => {
+        if (u) {
+            setUser(u);
+            localStorage.setItem('glasshabit_user', JSON.stringify(u));
+            try {
+                const d = await backend.getData(u.id);
+                setData(d);
+            } catch (e: any) {
+                if (e?.code !== 'permission-denied') {
+                    console.error("Data load error", e);
+                }
+            }
+        } else {
+            setUser(null);
+            setData({ tasks: [], logs: [], todos: [], expenses: [], journal: [] });
+            localStorage.removeItem('glasshabit_user');
+        }
         setIsLoading(false);
-    }
+    });
 
     getMotivationalQuote().then(setDailyQuote);
+    
+    return () => unsubscribe();
   }, []);
 
   const loginUser = (u: User) => {
+    // This helper now primarily updates local state immediately for UX responsiveness
+    // The real source of truth is the subscribeToAuth callback above
     setUser(u);
     localStorage.setItem('glasshabit_user', JSON.stringify(u));
-    setIsLoading(true);
-    backend.getData(u.id).then((d) => {
-        setData(d);
-        setIsLoading(false);
-    });
+    // We can optimistically fetch data, but subscribeToAuth will also trigger
+    backend.getData(u.id)
+        .then((d) => {
+            setData(d);
+            showToast(`Welcome back, ${u.username}!`, 'success');
+        })
+        .catch(err => {
+            console.error("Login data fetch error", err);
+        });
   };
 
   const updateUser = (u: User) => {
@@ -114,13 +157,16 @@ const App = () => {
       localStorage.setItem('glasshabit_user', JSON.stringify(u));
   }
 
-  const logoutUser = () => {
+  const logoutUser = async () => {
+    await backend.logout();
     setUser(null);
     localStorage.removeItem('glasshabit_user');
+    showToast("Logged out successfully", 'info');
   };
 
   return (
-    <AppContext.Provider value={{ user, data, isLoading, refreshData, loginUser, updateUser, logoutUser, dailyQuote }}>
+    <AppContext.Provider value={{ user, data, isLoading, refreshData, loginUser, updateUser, logoutUser, dailyQuote, showToast }}>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <HashRouter>
          <AppContent />
       </HashRouter>
