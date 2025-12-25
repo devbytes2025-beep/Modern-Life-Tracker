@@ -1,30 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../App';
 import { backend } from '../services/mockBackend';
-import { Button, Input, Card, Select, Modal } from '../components/UI';
+import { Button, Input, Card, Modal } from '../components/UI';
 import { useNavigate } from 'react-router-dom';
-import { playSound, SECURITY_QUESTIONS } from '../constants';
-import { Check, X, Mail } from 'lucide-react';
+import { playSound } from '../constants';
 
 const Login: React.FC = () => {
   const { loginUser, showToast } = useApp();
   const navigate = useNavigate();
   const [isSignup, setIsSignup] = useState(false);
-  const [securityMethod, setSecurityMethod] = useState<'key' | 'question'>('question');
   
   // Forgot Password State
   const [isForgotOpen, setIsForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   
-  // Verification Modal
-  const [isVerificationSent, setIsVerificationSent] = useState(false);
-  
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     email: '',
-    securityQuestion: SECURITY_QUESTIONS[0],
-    secretKeyAnswer: '',
     confirmPassword: ''
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -32,7 +25,7 @@ const Login: React.FC = () => {
   // Password Strength State
   const [pwdStrength, setPwdStrength] = useState(0);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
 
@@ -46,14 +39,7 @@ const Login: React.FC = () => {
       if (pwd.length > 8) score++;
       if (/[A-Z]/.test(pwd)) score++;
       if (/[0-9]/.test(pwd)) score++;
-      if (/[^A-Za-z0-9]/.test(pwd)) score++; // Special char
       setPwdStrength(score);
-  };
-
-  const validateUsername = (username: string) => {
-      // Alphanumeric + underscore, 3-20 chars
-      const regex = /^[a-zA-Z0-9_]{3,20}$/;
-      return regex.test(username);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,45 +48,45 @@ const Login: React.FC = () => {
     playSound('click');
     
     try {
-      let user;
       if (isSignup) {
-        // --- Validation ---
-        if (!validateUsername(formData.username)) {
-            throw new Error("Username must be 3-20 characters, letters, numbers, or underscores only.");
-        }
         if (formData.password !== formData.confirmPassword) throw new Error("Passwords do not match");
-        
-        // Strict Password Check
-        if (pwdStrength < 4) {
-             throw new Error("Password is too weak. Must contain Uppercase, Number, Special Character and be 8+ chars.");
-        }
+        if (pwdStrength < 2) throw new Error("Password too weak");
 
-        if (!formData.secretKeyAnswer) throw new Error("Security answer required");
-        
-        user = await backend.register({
-            username: formData.username,
+        // Use email for registration as per Firebase standard
+        await backend.register({
             email: formData.email,
-            secretKeyAnswer: formData.secretKeyAnswer,
-            securityQuestion: securityMethod === 'question' ? formData.securityQuestion : undefined
+            username: formData.username
         }, formData.password);
         
-        // Show Verification Modal instead of auto-navigating
-        setIsVerificationSent(true);
-        setIsLoading(false);
+        showToast("Account created!", 'success');
         playSound('success');
-        return; // Stop here
-
       } else {
-        user = await backend.login(formData.username, formData.password);
-        loginUser(user);
+        // Login with Email/Password (Firebase default)
+        // If user entered username, this might fail unless we map it, 
+        // but let's assume Email for simplicity in Firebase
+        const loginEmail = formData.email || formData.username; // Fallback if they typed email in username field
+        if (!loginEmail.includes('@')) {
+            throw new Error("Please use Email to login");
+        }
+        
+        await backend.login(loginEmail, formData.password);
         playSound('success');
-        navigate('/'); 
+        showToast("Welcome back!", 'success');
       }
+      navigate('/'); 
       
     } catch (err: any) {
       playSound('error');
-      showToast(err.message || 'Authentication failed', 'error');
-      setIsLoading(false);
+      // Firebase error mapping
+      let msg = err.message;
+      if (msg.includes('auth/invalid-email')) msg = "Invalid email address";
+      if (msg.includes('auth/user-not-found')) msg = "User not found";
+      if (msg.includes('auth/wrong-password')) msg = "Incorrect password";
+      if (msg.includes('auth/email-already-in-use')) msg = "Email already registered";
+      
+      showToast(msg, 'error');
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -112,7 +98,7 @@ const Login: React.FC = () => {
       }
       try {
           await backend.resetPassword(forgotEmail);
-          showToast("Password reset link sent to your email!", 'success');
+          showToast("Password reset link sent!", 'success');
           setIsForgotOpen(false);
           setForgotEmail('');
       } catch (err: any) {
@@ -122,60 +108,35 @@ const Login: React.FC = () => {
 
   // Render Strength Bar
   const renderStrengthBar = () => {
-      const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
-      const width = (pwdStrength / 4) * 100;
-      const color = colors[pwdStrength - 1] || 'bg-gray-600';
+      const colors = ['bg-red-500', 'bg-yellow-500', 'bg-green-500'];
+      const width = (pwdStrength / 3) * 100;
+      const color = colors[Math.min(pwdStrength, 2)];
       
       return (
           <div className="mt-1">
               <div className="h-1 w-full bg-gray-700 rounded overflow-hidden">
-                  <div className={`h-full transition-all duration-300 ${color}`} style={{ width: `${width}%` }}></div>
+                  <div className={`h-full transition-all duration-300 ${color}`} style={{ width: `${Math.min(width, 100)}%` }}></div>
               </div>
-              <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                   <span>Weak</span>
-                   <span>Strong</span>
-              </div>
-              <ul className="text-[10px] text-gray-400 mt-1 space-y-0.5">
-                  <li className={formData.password.length >= 8 ? "text-green-400" : ""}>• 8+ Characters</li>
-                  <li className={/[A-Z]/.test(formData.password) ? "text-green-400" : ""}>• 1 Uppercase</li>
-                  <li className={/[0-9]/.test(formData.password) ? "text-green-400" : ""}>• 1 Number</li>
-                  <li className={/[^A-Za-z0-9]/.test(formData.password) ? "text-green-400" : ""}>• 1 Special Char</li>
-              </ul>
           </div>
       );
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      {/* Verification Success Modal */}
-      <Modal isOpen={isVerificationSent} onClose={() => { setIsVerificationSent(false); setIsSignup(false); }} title="Verify Your Email">
-          <div className="text-center py-6">
-             <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-400">
-                 <Mail size={32} />
-             </div>
-             <h3 className="text-xl font-bold mb-2">Check your inbox!</h3>
-             <p className="text-gray-300 mb-6">
-                 We've sent a verification link to <b>{formData.email}</b>.<br/>
-                 Please verify your email before logging in.
-             </p>
-             <Button onClick={() => { setIsVerificationSent(false); setIsSignup(false); }} className="w-full">
-                 Back to Login
-             </Button>
-          </div>
-      </Modal>
-
       <Card className="w-full max-w-md animate-[float_6s_ease-in-out_infinite]">
         <div className="text-center mb-8">
             <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500 mb-2">
                 GlassHabit
             </h1>
-            <p className="text-gray-400">Master your life with AI & Aesthetics</p>
+            <p className="text-gray-400">Powered by Firebase & Cloudflare</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* For Login, we prefer Email */}
           <Input 
-            name="username" 
-            placeholder={isSignup ? "Create Username (Unique)" : "Username or Email"} 
+            name={isSignup ? "username" : "username"} // Reusing name for state mapping logic
+            placeholder={isSignup ? "Display Name" : "Email Address"} 
             value={formData.username} 
             onChange={handleChange} 
             required 
@@ -205,36 +166,14 @@ const Login: React.FC = () => {
           </div>
 
           {isSignup && (
-            <>
-                <Input 
-                    name="confirmPassword" 
-                    type="password" 
-                    placeholder="Confirm Password" 
-                    value={formData.confirmPassword} 
-                    onChange={handleChange} 
-                    required 
-                />
-                
-                <div className="pt-2">
-                    <label className="text-sm text-gray-400 mb-1 block">Security Question (For Recovery)</label>
-                    <Select 
-                        name="securityQuestion"
-                        value={formData.securityQuestion}
-                        onChange={handleChange}
-                        className="mb-2"
-                    >
-                        {SECURITY_QUESTIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                    </Select>
-                    
-                    <Input 
-                        name="secretKeyAnswer" 
-                        placeholder="Your Answer" 
-                        value={formData.secretKeyAnswer} 
-                        onChange={handleChange} 
-                        required 
-                    />
-                </div>
-            </>
+             <Input 
+                name="confirmPassword" 
+                type="password" 
+                placeholder="Confirm Password" 
+                value={formData.confirmPassword} 
+                onChange={handleChange} 
+                required 
+            />
           )}
 
           <Button type="submit" className="w-full justify-center mt-6" disabled={isLoading}>
@@ -242,7 +181,7 @@ const Login: React.FC = () => {
           </Button>
 
           <div className="flex justify-between items-center text-sm text-gray-400 mt-4">
-             <button type="button" onClick={() => { setIsSignup(!isSignup); setFormData({...formData, password: ''}); setPwdStrength(0); }} className="hover:text-white transition-colors">
+             <button type="button" onClick={() => { setIsSignup(!isSignup); setFormData({username: '', email: '', password: '', confirmPassword: ''}); }} className="hover:text-white transition-colors">
                  {isSignup ? 'Already have an account? Login' : 'Create an account'}
              </button>
              {!isSignup && (

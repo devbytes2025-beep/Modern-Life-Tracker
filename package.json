@@ -13,7 +13,7 @@
     "db:local": "wrangler d1 execute glasshabit-db --file=./worker/schema.sql --local"
   },
   "dependencies": {
-    "@google/genai": "^1.0.0",
+    "@google/genai": "^0.1.0",
     "date-fns": "^3.3.1",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
@@ -31,6 +31,6 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.1.4",
-    "wrangler": "^4.54.0"
+    "wrangler": "^3.28.1"
   }
 }

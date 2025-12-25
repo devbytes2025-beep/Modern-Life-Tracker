@@ -1,183 +1,347 @@
 import { User, AppData, TaskLog, JournalEntry, Todo, Expense, Task } from '../types';
+import { auth } from './firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  updateProfile,
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
 
 // Use environment variable or default to local worker.
 const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8787/api";
-// Ensure no trailing slash
 const API_URL = RAW_API_URL.replace(/\/+$/, "");
 
-export const generateUUID = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
+const STORAGE_KEY = 'glasshabit_offline_data';
+
+// --- Local Storage Fallback Implementation ---
+class LocalStore {
+    private getData(): AppData & { users: User[] } {
+        const str = localStorage.getItem(STORAGE_KEY);
+        if (!str) {
+            const init = { users: [], tasks: [], logs: [], todos: [], expenses: [], journal: [] };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(init));
+            return init;
+        }
+        return JSON.parse(str);
+    }
+
+    private saveData(data: any) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    syncUser(user: User): User {
+        const db = this.getData();
+        const existing = db.users.find(u => u.id === user.id);
+        if (!existing) {
+            db.users.push(user);
+            this.saveData(db);
+            return user;
+        }
+        return existing;
+    }
+
+    updateUser(user: User): User {
+        const db = this.getData();
+        const idx = db.users.findIndex(u => u.id === user.id);
+        if (idx !== -1) {
+            db.users[idx] = { ...db.users[idx], ...user };
+            this.saveData(db);
+            return db.users[idx];
+        }
+        return user;
+    }
+
+    getDataForUser(userId: string): AppData {
+        const db = this.getData();
+        return {
+            tasks: db.tasks.filter(i => i.userId === userId),
+            logs: db.logs.filter(i => i.taskId && db.tasks.find(t => t.id === i.taskId && t.userId === userId)),
+            todos: db.todos.filter(i => i.userId === userId),
+            expenses: db.expenses.filter(i => i.userId === userId),
+            journal: db.journal.filter(i => i.userId === userId),
+        };
+    }
+
+    addItem(collection: keyof AppData, item: any) {
+        const db = this.getData();
+        if (Array.isArray(db[collection])) {
+            (db[collection] as any[]).push(item);
+            this.saveData(db);
+        }
+        return item;
+    }
+
+    updateItem(collection: keyof AppData, item: any) {
+        const db = this.getData();
+        if (Array.isArray(db[collection])) {
+            const idx = (db[collection] as any[]).findIndex(i => i.id === item.id);
+            if (idx !== -1) {
+                (db[collection] as any[])[idx] = item;
+                this.saveData(db);
+            }
+        }
+        return item;
+    }
+
+    deleteItem(collection: keyof AppData, id: string) {
+        const db = this.getData();
+        if (Array.isArray(db[collection])) {
+            (db[collection] as any) = (db[collection] as any[]).filter(i => i.id !== id);
+            this.saveData(db);
+        }
+    }
+}
+
+const localStore = new LocalStore();
 
 class BackendService {
   private token: string | null = null;
+  private currentUser: User | null = null;
+  private offlineMode = false;
 
   constructor() {
       this.token = localStorage.getItem('glasshabit_token');
   }
 
-  // --- Helper: Secure Fetch ---
-  private async fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-     if (!this.token) throw new Error("Not authenticated");
+  // --- Helper: Secure Fetch to Worker with Fallback ---
+  private async fetchWorker(endpoint: string, options: RequestInit = {}) {
+     // If we already failed once, stick to offline mode to avoid delays
+     if (this.offlineMode) {
+         return this.mockResponse(endpoint, options);
+     }
+
+     const uid = auth?.currentUser?.uid || this.token;
+     if (!uid && !this.offlineMode) {
+         // If no auth but trying to fetch, just return null or handle gracefully
+         console.warn("No auth token available");
+     }
 
      const headers = {
          'Content-Type': 'application/json',
-         'Authorization': `Bearer ${this.token}`,
+         'Authorization': `Bearer ${uid}`,
          ...options.headers
      };
 
-     // Ensure endpoint starts with /
      const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
-     const response = await fetch(`${API_URL}${safeEndpoint}`, {
-         ...options,
-         headers
-     });
+     try {
+         const response = await fetch(`${API_URL}${safeEndpoint}`, {
+             ...options,
+             headers
+         });
 
-     const data = await response.json();
+         const data = await response.json();
 
-     if (!response.ok) {
-         if (response.status === 401) {
-             // Token expired or invalid
-             this.logout();
-             throw new Error("Session expired. Please login again.");
+         if (!response.ok) {
+             throw new Error(data.error || data.details || 'API Request Failed');
          }
-         throw new Error(data.error || data.details || 'API Request Failed');
+         return data;
+     } catch (err) {
+         console.warn("Backend unavailable/unreachable. Switching to Offline Mode (LocalStorage).", err);
+         this.offlineMode = true;
+         return this.mockResponse(endpoint, options);
      }
-
-     return data;
   }
 
-  // --- Auth Management ---
+  // --- Local Simulation Logic ---
+  private async mockResponse(endpoint: string, options: RequestInit) {
+      const uid = auth?.currentUser?.uid || this.token || 'guest';
+      const method = options.method || 'GET';
+      const body = options.body ? JSON.parse(options.body as string) : null;
+      
+      // Simulate network delay for realism
+      await new Promise(r => setTimeout(r, 300));
 
-  // Check if user is logged in on app load
-  async checkSession(): Promise<User | null> {
-      if (!this.token) return null;
-      try {
-          // Verify token by fetching profile
-          return await this.fetchWithAuth('/user/me');
-      } catch (e) {
-          console.error("Session check failed", e);
-          this.logout();
-          return null;
+      // Router
+      if (endpoint === '/user/sync' && method === 'POST') {
+          return localStore.syncUser({ ...body, points: 0, theme: 'dark' });
       }
+      if (endpoint === '/user/me' && method === 'PUT') {
+          return localStore.updateUser(body);
+      }
+      if (endpoint === '/data' && method === 'GET') {
+          return localStore.getDataForUser(uid);
+      }
+      
+      // Generic CRUD Pattern: /collection or /collection/id
+      const parts = endpoint.split('/').filter(p => p); // remove empty
+      const collection = parts[0] as keyof AppData;
+      const id = parts[1];
+
+      if (['tasks', 'logs', 'todos', 'expenses', 'journal'].includes(collection)) {
+          if (method === 'POST') return localStore.addItem(collection, body);
+          if (method === 'PUT') return localStore.updateItem(collection, body);
+          if (method === 'DELETE') {
+              localStore.deleteItem(collection, id);
+              return { success: true };
+          }
+      }
+      
+      return {};
   }
+
+  // --- Auth Management (Firebase) ---
 
   subscribeToAuth(callback: (user: User | null) => void): () => void {
-      // Run initial check
-      this.checkSession().then(user => callback(user));
+      if (!auth) {
+          console.warn("Firebase Auth not initialized.");
+          return () => {};
+      }
+
+      return onAuthStateChanged(auth, async (firebaseUser) => {
+          if (firebaseUser) {
+              this.token = firebaseUser.uid;
+              localStorage.setItem('glasshabit_token', firebaseUser.uid);
+              
+              try {
+                  const dbUser = await this.syncUserWithWorker(firebaseUser);
+                  this.currentUser = dbUser;
+                  callback(dbUser);
+              } catch (e) {
+                  // Even if sync fails (e.g. mockResponse error), fallback to mapping
+                  console.error("Sync failed, using fallback user mapping", e);
+                  const fallbackUser = this.mapFirebaseUser(firebaseUser);
+                  callback(fallbackUser);
+              }
+          } else {
+              this.token = null;
+              this.currentUser = null;
+              localStorage.removeItem('glasshabit_token');
+              callback(null);
+          }
+      });
+  }
+
+  private async syncUserWithWorker(firebaseUser: FirebaseUser): Promise<User> {
+      const userData = {
+          id: firebaseUser.uid,
+          username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          email: firebaseUser.email || ''
+      };
       
-      // We don't have a real-time stream without Firebase/WebSockets, 
-      // so this is a one-time check for this simple implementation.
-      return () => {}; 
+      // This will trigger fetchWorker -> mockResponse if offline
+      return await this.fetchWorker('/user/sync', {
+          method: 'POST',
+          body: JSON.stringify(userData)
+      });
   }
 
-  async register(userData: Partial<User> & { password?: string }, password?: string): Promise<User> {
-      // Support both signatures for compatibility
-      const pass = password || userData.password;
-      if (!pass) throw new Error("Password is required");
-
-      const response = await fetch(`${API_URL}/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...userData, password: pass })
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || data.details || "Registration failed");
-
-      this.setSession(data.token, data.user);
-      return data.user;
+  private mapFirebaseUser(fUser: FirebaseUser): User {
+      return {
+          id: fUser.uid,
+          username: fUser.displayName || 'User',
+          email: fUser.email || '',
+          points: 0,
+          theme: 'dark',
+          secretKeyAnswer: ''
+      };
   }
 
-  async login(username: string, password: string): Promise<User> {
-      const response = await fetch(`${API_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-      });
+  async login(email: string, pass: string): Promise<User> {
+      if (!auth) throw new Error("Auth service unavailable");
+      const cred = await signInWithEmailAndPassword(auth, email, pass);
+      return this.syncUserWithWorker(cred.user);
+  }
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || data.details || "Login failed");
+  async register(data: { email: string; password?: string; username: string }, pass?: string): Promise<User> {
+      if (!auth) throw new Error("Auth service unavailable");
+      const password = pass || data.password;
+      if (!password) throw new Error("Password required");
 
-      this.setSession(data.token, data.user);
-      return data.user;
+      const cred = await createUserWithEmailAndPassword(auth, data.email, password);
+      await updateProfile(cred.user, { displayName: data.username });
+      
+      return this.syncUserWithWorker(cred.user);
   }
 
   async logout(): Promise<void> {
+      if (auth) await signOut(auth);
       this.token = null;
+      this.currentUser = null;
       localStorage.removeItem('glasshabit_token');
-      localStorage.removeItem('glasshabit_user');
-      // Force reload or callback could be handled by app context
   }
 
-  private setSession(token: string, user: User) {
-      this.token = token;
-      localStorage.setItem('glasshabit_token', token);
-      localStorage.setItem('glasshabit_user', JSON.stringify(user));
-  }
-  
   async resetPassword(email: string): Promise<void> {
-      // Since we don't have an email server in this simple worker setup,
-      // we'll simulate it or throw a feature not available error.
-      // For a real app, integrate Mailgun/SendGrid here.
-      throw new Error("Password reset via email is not configured in this demo environment. Please contact admin.");
+      if (!auth) throw new Error("Auth service unavailable");
+      const { sendPasswordResetEmail } = await import('firebase/auth');
+      await sendPasswordResetEmail(auth, email);
   }
-  
+
+  // --- Data Access ---
+
+  async getData(userId: string): Promise<AppData> {
+    return await this.fetchWorker(`/data`);
+  }
+
   async updateUser(updatedUser: User): Promise<User> {
-      return await this.fetchWithAuth(`/user/me`, {
+      if (auth?.currentUser && updatedUser.name) {
+          await updateProfile(auth.currentUser, { displayName: updatedUser.name });
+      }
+      return await this.fetchWorker(`/user/me`, {
           method: 'PUT',
           body: JSON.stringify(updatedUser)
       });
   }
 
   async resetData(userId: string, secretKeyAnswer: string): Promise<boolean> {
-     await this.fetchWithAuth(`/reset-data`, {
+     await this.fetchWorker(`/reset-data`, {
          method: 'POST',
          body: JSON.stringify({ secretKeyAnswer })
      });
      return true;
   }
 
-  // --- Data Access ---
-
-  async getData(userId: string): Promise<AppData> {
-    return await this.fetchWithAuth(`/data`);
-  }
-
   // --- Generic CRUD ---
 
   async addItem<T extends { id: string }>(userId: string, collectionName: keyof AppData, item: T): Promise<T> {
-    return await this.fetchWithAuth(`/${collectionName}`, {
+    return await this.fetchWorker(`/${collectionName}`, {
         method: 'POST',
         body: JSON.stringify(item)
     });
   }
 
   async updateItem<T extends { id: string }>(userId: string, collectionName: keyof AppData, item: T): Promise<T> {
-    return await this.fetchWithAuth(`/${collectionName}/${item.id}`, {
+    return await this.fetchWorker(`/${collectionName}/${item.id}`, {
         method: 'PUT',
         body: JSON.stringify(item)
     });
   }
 
   async deleteItem(userId: string, collectionName: keyof AppData, itemId: string): Promise<void> {
-    await this.fetchWithAuth(`/${collectionName}/${itemId}`, {
+    await this.fetchWorker(`/${collectionName}/${itemId}`, {
         method: 'DELETE'
     });
   }
   
   async importData(userId: string, jsonData: string): Promise<void> {
-      // Not implemented in this worker version yet, could iterate and add items
-      // For now, let's just log
-      console.log("Import not fully implemented in backend");
+      try {
+          const parsed = JSON.parse(jsonData);
+          // If offline, just load into local store
+          if (this.offlineMode) {
+              const current = localStore['getData'](); // Access private via casting or helper
+              // Simplified merge
+              const newData = { ...current, ...parsed };
+              localStore['saveData'](newData);
+          } else {
+              console.log("Cloud import not fully implemented");
+          }
+      } catch (e) {
+          console.error("Import error", e);
+          throw new Error("Invalid Data");
+      }
   }
 }
 
 export const backend = new BackendService();
+
+export const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};

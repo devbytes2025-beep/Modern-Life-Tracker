@@ -1,18 +1,1 @@
-name = "glasshabit-worker"
-main = "worker/index.js"
-compatibility_date = "2024-02-08"
-
-# D1 Database Binding
-[[d1_databases]]
-binding = "DB"
-database_name = "glasshabit-db"
-database_id = "371b67b1-e939-45f3-8354-9d243657b232"
-
-[vars]
-# Optional: Add environment variables here if needed
-# API_KEY = "your_key_here" 
-
-# CORS settings are handled manually in the worker code, 
-# but usually good to keep node_compat for some libraries
-[node_compat]
-compatibility_date = "2023-01-01"
+���
