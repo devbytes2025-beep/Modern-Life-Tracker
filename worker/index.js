@@ -10,40 +10,46 @@ async function hashPassword(password) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    
-    // Robust Path Normalization:
-    // 1. Remove '/api' prefix if present
-    // 2. Remove trailing slash to ensure consistency (e.g. /auth/login/ -> /auth/login)
-    let path = url.pathname.replace('/api', '');
-    if (path.endsWith('/') && path.length > 1) {
-        path = path.slice(0, -1);
-    }
-
-    const method = request.method;
-
-    // Robust CORS Headers
+    // 1. Define CORS headers upfront
     const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Origin': '*', // Allow any origin
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
       'Access-Control-Max-Age': '86400',
     };
 
-    // 1. Handle Preflight Request immediately
-    if (method === 'OPTIONS') {
-      return new Response(null, { 
-        status: 204, 
-        headers: corsHeaders 
-      });
+    // 2. Handle OPTIONS (Preflight) immediately
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     try {
+      // 3. Check for Database Binding
+      if (!env.DB) {
+        throw new Error('Database binding (DB) is missing in worker environment. Check wrangler.toml.');
+      }
+
+      const url = new URL(request.url);
+      
+      // Robust Path Normalization
+      // Remove '/api' prefix if present to handle routing differences
+      let path = url.pathname;
+      if (path.startsWith('/api')) {
+          path = path.slice(4); // Remove first 4 chars '/api'
+      }
+      // Remove trailing slash if present
+      if (path.endsWith('/') && path.length > 1) {
+          path = path.slice(0, -1);
+      }
+
+      const method = request.method;
+
       // --- Public Auth Routes ---
 
       // LOGIN
       if (path === '/auth/login' && method === 'POST') {
-          const { username, password } = await request.json();
+          const body = await request.json().catch(() => ({})); // Safe JSON parse
+          const { username, password } = body;
           
           if (!username || !password) {
             return new Response(JSON.stringify({ error: 'Missing credentials' }), { status: 400, headers: corsHeaders });
@@ -78,7 +84,7 @@ export default {
 
       // REGISTER
       if (path === '/auth/register' && method === 'POST') {
-          const user = await request.json();
+          const user = await request.json().catch(() => ({}));
           
           if (!user.username || !user.email || !user.password) {
               return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: corsHeaders });
@@ -92,27 +98,23 @@ export default {
           const hashedPassword = await hashPassword(user.password);
           const userId = crypto.randomUUID();
           
-          try {
-            await env.DB.prepare(`
-                INSERT INTO users (id, username, email, password, secretKeyAnswer, securityQuestion, theme, points, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).bind(
-                userId, user.username, user.email, hashedPassword, 
-                user.secretKeyAnswer, user.securityQuestion, 'dark', 0, Date.now()
-            ).run();
+          await env.DB.prepare(`
+              INSERT INTO users (id, username, email, password, secretKeyAnswer, securityQuestion, theme, points, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+              userId, user.username, user.email, hashedPassword, 
+              user.secretKeyAnswer || '', user.securityQuestion || '', 'dark', 0, Date.now()
+          ).run();
 
-            const sessionData = JSON.stringify({
-                id: userId,
-                username: user.username,
-                exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
-             });
-             const token = btoa(sessionData);
+          const sessionData = JSON.stringify({
+              id: userId,
+              username: user.username,
+              exp: Date.now() + (7 * 24 * 60 * 60 * 1000)
+           });
+           const token = btoa(sessionData);
 
-             const newUser = { ...user, id: userId, password: undefined, points: 0, theme: 'dark' };
-             return new Response(JSON.stringify({ user: newUser, token }), { headers: corsHeaders });
-          } catch (e) {
-             return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
-          }
+           const newUser = { ...user, id: userId, password: undefined, points: 0, theme: 'dark' };
+           return new Response(JSON.stringify({ user: newUser, token }), { headers: corsHeaders });
       }
 
       // --- Middleware: Verify Token ---
@@ -158,7 +160,7 @@ export default {
           const { secretKeyAnswer } = await request.json();
           const user = await env.DB.prepare('SELECT secretKeyAnswer FROM users WHERE id = ?').bind(userId).first();
           
-          if (user.secretKeyAnswer !== secretKeyAnswer) {
+          if (!user || user.secretKeyAnswer !== secretKeyAnswer) {
               return new Response(JSON.stringify({ error: 'Invalid Secret' }), { status: 403, headers: corsHeaders });
           }
           
@@ -206,8 +208,9 @@ export default {
 
       // Generic CRUD
       const parts = path.split('/');
-      const collection = parts[1];
-      const itemId = parts[2];
+      // Handle potential empty first part if path starts with /
+      const collection = parts[0] === '' ? parts[1] : parts[0];
+      const itemId = parts[0] === '' ? parts[2] : parts[1];
 
       if (['tasks', 'logs', 'todos', 'expenses', 'journal'].includes(collection)) {
           if (method === 'POST') {
@@ -249,11 +252,19 @@ export default {
           }
       }
 
-      return new Response('Not Found', { status: 404, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Route Not Found', path }), { status: 404, headers: corsHeaders });
 
     } catch (err) {
-      // Catch-all for runtime errors (like DB connection failed) to ensure CORS headers are sent
-      return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+      // CRITICAL: Return the actual error message in JSON format with CORS headers
+      // This allows the frontend to see WHY it failed instead of just a generic CORS error
+      return new Response(JSON.stringify({ 
+          error: 'Internal Server Error', 
+          details: err.message,
+          stack: err.stack 
+      }), { 
+          status: 500, 
+          headers: corsHeaders 
+      });
     }
   },
 };
