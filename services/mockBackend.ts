@@ -13,8 +13,10 @@ import {
 } from "firebase/auth";
 
 // --- Configuration ---
-// Point this to your deployed Cloudflare Worker URL
-const API_URL = "http://localhost:8787/api"; 
+// Automatically use the Production URL from environment variables if available, otherwise localhost
+// In Cloudflare Pages settings, add a variable: VITE_API_URL = https://your-worker.workers.dev/api
+// Fix: Cast import.meta to any to avoid TypeScript error "Property 'env' does not exist on type 'ImportMeta'"
+const API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8787/api"; 
 
 const firebaseConfig = {
   apiKey: "AIzaSyCxz9DyLfrdh21laP3H2OwPqLQSBfZl25I",
