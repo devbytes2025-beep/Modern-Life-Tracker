@@ -1,7 +1,9 @@
 import { User, AppData, TaskLog, JournalEntry, Todo, Expense, Task } from '../types';
 
-// Use environment variable or default to local worker
-const API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8787/api";
+// Use environment variable or default to local worker.
+// Remove trailing slash if present for consistency.
+const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8787/api";
+const API_URL = RAW_API_URL.endsWith('/') ? RAW_API_URL.slice(0, -1) : RAW_API_URL;
 
 export const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
