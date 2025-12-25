@@ -1,1 +1,8 @@
-���
+name = "glasshabit-worker"
+main = "worker/index.js"
+compatibility_date = "2024-02-08"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "glasshabit-db"
+database_id = "PLACEHOLDER_ID"
